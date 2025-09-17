@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>拓扑关系可视化工具</title>
+  <style>
+    /* 样式保持不变 */
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f7fa;
+      color: #333;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      max-width: 1600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+
+    header {
+      background: #191548;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    /* 新的配置区域布局 */
+    .config-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      padding: 20px;
+      background: #ecf0f1;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .config-panel {
+      flex: 1;
+      min-width: 300px;
+      padding: 15px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .power-config-panel {
+      flex: 1;
+      /* 修改为1份宽度 */
+      min-width: 300px;
+    }
+
+    .convergence-config-panel {
+      flex: 2;
+      /* 修改为2份宽度 */
+      min-width: 400px;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-top: 0;
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 8px;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 5px;
+      font-weight: 500;
+    }
+
+    select,
+    input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      font-size: 14px;
+    }
+
+    /* 功率节点配置内部布局 - 修改为垂直排列 */
+    .power-config-vertical {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    /* 可视化区域 */
+    .visualization {
+      padding: 20px;
+      min-height: 350px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    canvas {
+      background: rgba(173, 220, 241, 0.301);
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      max-width: 100%;
+    }
+
+    footer {
+      text-align: center;
+      padding: 15px;
+      background: #f8f9fa;
+      border-top: 1px solid #e9ecef;
+      color: #191548;
+      font-size: 14px;
+    }
+
+    .cross-connection-container {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .cross-connection-select {
+      width: 80px;
+    }
+
+    .plus-sign {
+      font-size: 18px;
+      font-weight: bold;
+      color: #666;
+    }
+
+    .cross-connection-group {
+      margin-bottom: 15px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 5px;
+      border: 1px solid #e9ecef;
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 1200px) {
+      .config-container {
+        flex-direction: column;
+      }
+
+      .config-panel {
+        min-width: 100%;
+      }
+
+      .power-config-vertical {
+        flex-direction: column;
+      }
+    }
+
+    /* 输出按钮样式 */
+    .output-button {
+      background: #191548;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 15px;
+      transition: background 0.3s;
+    }
+
+    .output-button:hover {
+      background: #2980b9;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>功率节点拓扑配置</h1>
+    </header>
+
+    <!-- 配置区域 - 水平排列 -->
+    <div class="config-container">
+      <div class="config-panel power-config-panel">
+        <div class="control-group">
+          <h2>功率节点配置</h2>
+          <div class="power-config-vertical">
+            <div>
+              <label for="collectionCount">功率池数量:</label>
+              <select id="collectionCount">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+            <div>
+              <label for="nodeSetPerCollection">功率节点数量:</label>
+              <select id="nodeSetPerCollection">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+            <div>
+              <label for="nodesPerSet">节点连接器数量:</label>
+              <select id="nodesPerSet">
+                <option value="3">3</option>
+                <option value="4" selected>4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="config-panel convergence-config-panel">
+        <div class="control-group">
+          <h2>汇流点跨接配置</h2>
+          <div id="crossConnectionContainer">
+            <!-- 动态生成的跨接配置区域 -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 可视化区域 - 在配置区域下方 -->
+    <div class="visualization">
+      <canvas id="topologyCanvas" width="1600" height="550"></canvas>
+    </div>
+
+    <!-- 输出按钮 -->
+    <div style="padding: 20px 0; text-align: center; width: 100%">
+      <button id="outputButton" class="output-button">
+        生成节点拓扑代码
+      </button>
+    </div>
+
+    <footer>
+      <p>功率节点拓扑可视化工具 &copy; 2025 | 英飞源技术有限公司</p>
+    </footer>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const canvas = document.getElementById("topologyCanvas");
+      const ctx = canvas.getContext("2d");
+      const crossConnectionContainer = document.getElementById(
+        "crossConnectionContainer"
+      );
+      const outputButton = document.getElementById("outputButton");
+
+      // 汇流点颜色 - 普通汇流点
+      const convergenceColors = [
+        "#e74c3c",
+        "#2ecc71",
+        "#f39c12",
+        "#9b59b6",
+        "#1abc9c",
+        "#e67e22",
+      ];
+
+      // 跨接汇流点颜色 - 使用不同的颜色
+      const crossConnectionColors = [
+        "#ff6b6b",
+        "#48dbfb",
+        "#feca57",
+        "#ff9ff3",
+        "#54a0ff",
+        "#ff9f43",
+      ];
+
+      // 跨接配置状态
+      let crossConnections = [];
+
+      // 全局变量存储节点集合信息
+      let nodeSets = [];
+
+      // 存储重新编号的映射关系
+      let renumberedPointsMap = {};
+
+      // 存储汇流点与子节点的连接关系
+      let convergenceConnections = [];
+
+      // 初始化画布
+      function initCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "12px Arial";
+
+        // 添加水印
+        ctx.fillStyle = "rgba(0, 0, 255, 0.03)"; // 蓝色，更低的透明度
+        ctx.font = "bold 36px Arial";
+
+        // 设置水印重复的间距
+        const spacingX = 500;
+        const spacingY = 120;
+
+        // 在整个画布上重复绘制水印
+        for (let x = 0; x < canvas.width; x += spacingX) {
+          let cnt_y = 0;
+          for (let y = 0; y < canvas.height; y += spacingY) {
+            ctx.fillText(
+              "英飞源InfyPower",
+              x + (cnt_y++ % 2) * (spacingX / 2),
+              y
+            );
+          }
+        }
+      }
+
+      // 生成拓扑图
+      function generateTopology() {
+        initCanvas();
+
+        const collectionCount = parseInt(
+          document.getElementById("collectionCount").value
+        );
+        const nodeSetPerCollection = parseInt(
+          document.getElementById("nodeSetPerCollection").value
+        );
+        const nodesPerSet = parseInt(
+          document.getElementById("nodesPerSet").value
+        );
+
+        // 绘制集合体、节点集合和子节点
+        const collections = drawCollections(
+          collectionCount,
+          nodeSetPerCollection,
+          nodesPerSet
+        );
+
+        // 绘制汇流点和连接
+        drawConvergenceNodes(collections, nodesPerSet);
+
+        // 更新节点集合分组信息
+        updateNodeSetGroups(collections, nodesPerSet);
+
+        // 更新跨接配置下拉框的显示
+        updateCrossConnectionDropdowns();
+
+        // 更新汇流点与子节点的连接关系
+        updateConvergenceConnections(collections, nodesPerSet);
+      }
+
+      // 创建跨接配置UI
+      function createCrossConnectionUI(collectionCount, nodesPerSet) {
+        crossConnectionContainer.innerHTML = "";
+        crossConnections = [];
+
+        for (let i = 0; i < collectionCount; i++) {
+          const group = document.createElement("div");
+          group.className = "cross-connection-group";
+
+          const label = document.createElement("label");
+          label.textContent = `跨接组 ${i + 1}:`;
+          group.appendChild(label);
+
+          const container = document.createElement("div");
+          container.className = "cross-connection-container";
+          container.id = `crossConnectionGroup${i}`;
+
+          // 添加下拉框
+          for (let j = 0; j < collectionCount; j++) {
+            if (j > 0) {
+              const plus = document.createElement("span");
+              plus.className = "plus-sign";
+              plus.textContent = "+";
+              container.appendChild(plus);
+            }
+
+            const select = document.createElement("select");
+            select.className = "cross-connection-select";
+            select.dataset.group = i;
+            select.dataset.index = j;
+            select.disabled = j > 0; // 默认禁用后续下拉框
+
+            // 添加默认选项
+            const defaultOption = document.createElement("option");
+            defaultOption.value = "";
+            defaultOption.textContent = " 请选择 ";
+            select.appendChild(defaultOption);
+
+            // 添加汇流点选项
+            for (let k = 0; k < collectionCount * nodesPerSet; k++) {
+              const option = document.createElement("option");
+              option.value = k + 1;
+              option.textContent = `#${k + 1}`;
+              select.appendChild(option);
+            }
+
+            select.addEventListener("change", handleCrossConnectionChange);
+            container.appendChild(select);
+          }
+
+          group.appendChild(container);
+          crossConnectionContainer.appendChild(group);
+        }
+      }
+
+      // 更新跨接配置下拉框显示
+      function updateCrossConnectionDropdowns() {
+        const dropdowns = document.querySelectorAll(
+          ".cross-connection-select"
+        );
+        dropdowns.forEach((dropdown) => {
+          for (let i = 0; i < dropdown.options.length; i++) {
+            const option = dropdown.options[i];
+            if (option.value && renumberedPointsMap[option.value]) {
+              // 保持值不变，但更新显示文本为新编号
+              option.textContent = `#${renumberedPointsMap[option.value]}`;
+            } else if (option.value) {
+              // 如果没有重新编号的映射，保持原编号
+              option.textContent = `#${option.value}`;
+            }
+          }
+
+          // 如果当前已选择的值有重新编号，更新显示但不改变值
+          if (dropdown.value && renumberedPointsMap[dropdown.value]) {
+            const selectedOption = dropdown.options[dropdown.selectedIndex];
+            selectedOption.textContent = `#${renumberedPointsMap[dropdown.value]
+              }`;
+          }
+        });
+      }
+
+      // 处理跨接配置变化
+      function handleCrossConnectionChange(e) {
+        const select = e.target;
+        const groupIndex = parseInt(select.dataset.group);
+        const selectIndex = parseInt(select.dataset.index);
+        const selectedValue = select.value;
+
+        // 更新跨接配置状态
+        if (!crossConnections[groupIndex]) {
+          crossConnections[groupIndex] = [];
+        }
+
+        if (selectedValue) {
+          crossConnections[groupIndex][selectIndex] = parseInt(selectedValue);
+
+          // 启用下一个下拉框
+          const nextSelect = document.querySelector(
+            `.cross-connection-select[data-group="${groupIndex}"][data-index="${selectIndex + 1
+            }"]`
+          );
+          if (nextSelect) {
+            nextSelect.disabled = false;
+
+            // 更新下一个下拉框的选项
+            updateCrossConnectionOptions(groupIndex, selectIndex + 1);
+          }
+        } else {
+          // 清空当前及后续选择
+          for (
+            let i = selectIndex;
+            i < crossConnections[groupIndex].length;
+            i++
+          ) {
+            crossConnections[groupIndex][i] = null;
+            const nextSelect = document.querySelector(
+              `.cross-connection-select[data-group="${groupIndex}"][data-index="${i}"]`
+            );
+            if (nextSelect) {
+              nextSelect.value = "";
+              if (i > selectIndex) {
+                nextSelect.disabled = true;
+              }
+            }
+          }
+        }
+
+        // 重新生成拓扑图
+        generateTopology();
+      }
+
+      // 更新跨接配置选项
+      function updateCrossConnectionOptions(groupIndex, selectIndex) {
+        const select = document.querySelector(
+          `.cross-connection-select[data-group="${groupIndex}"][data-index="${selectIndex}"]`
+        );
+        if (!select) return;
+
+        // 获取已选择的汇流点
+        const selectedValues = [];
+        for (let i = 0; i < selectIndex; i++) {
+          if (crossConnections[groupIndex][i]) {
+            selectedValues.push(crossConnections[groupIndex][i]);
+          }
+        }
+
+        // 获取集合体数量和每个集合体的汇流点数
+        const collectionCount = parseInt(
+          document.getElementById("collectionCount").value
+        );
+        const nodesPerSet = parseInt(
+          document.getElementById("nodesPerSet").value
+        );
+
+        // 获取最后一个选择的汇流点的位置信息
+        const lastSelected = selectedValues[selectedValues.length - 1];
+        const lastCollectionIndex = Math.floor(
+          (lastSelected - 1) / nodesPerSet
+        );
+        const lastPositionIndex = (lastSelected - 1) % nodesPerSet;
+
+        // 清空选项（保留默认选项）
+        while (select.options.length > 1) {
+          select.remove(1);
+        }
+
+        // 添加符合条件的选项
+        for (let i = 0; i < collectionCount; i++) {
+          // 跳过已经选择过的集合体
+          const collectionSelected = selectedValues.some((val) => {
+            const colIdx = Math.floor((val - 1) / nodesPerSet);
+            return colIdx === i;
+          });
+
+          if (!collectionSelected) {
+            const convergenceIndex = i * nodesPerSet + lastPositionIndex + 1;
+            const option = document.createElement("option");
+            option.value = convergenceIndex;
+            option.textContent = `#${convergenceIndex}`;
+            select.appendChild(option);
+          }
+        }
+      }
+
+      // 绘制集合体
+      function drawCollections(
+        collectionCount,
+        nodeSetPerCollection,
+        nodesPerSet
+      ) {
+        const collections = [];
+        const horizontalPadding = 80; // 增加水平边距
+        const collectionWidth =
+          (canvas.width - horizontalPadding * 2) / collectionCount;
+        const collectionHeight = 120;
+
+        // 重置节点集合数组
+        nodeSets = [];
+
+        for (let c = 0; c < collectionCount; c++) {
+          const collection = {
+            x: horizontalPadding + c * collectionWidth,
+            y: 80,
+            width: collectionWidth - 40,
+            height: collectionHeight,
+            nodeSets: [],
+          };
+
+          // 绘制集合体外框
+          ctx.strokeStyle = "#3498db";
+          ctx.fillStyle = "rgba(52, 152, 219, 0.1)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(
+            collection.x,
+            collection.y,
+            collection.width,
+            collection.height
+          );
+          ctx.fillRect(
+            collection.x,
+            collection.y,
+            collection.width,
+            collection.height
+          );
+
+          // 绘制集合体标签
+          ctx.fillStyle = "#2c3e50";
+          ctx.font = "bold 14px Arial";
+          ctx.fillText(
+            `功率池🗲${c + 1}`,
+            collection.x + 10,
+            collection.y - 10
+          );
+
+          // 绘制节点集合
+          const nodeSetWidth = (collection.width - 6) / nodeSetPerCollection;
+          const nodeSetHeight = 80;
+
+          for (let s = 0; s < nodeSetPerCollection; s++) {
+            // 计算全局节点集合编号
+            const globalNodeSetIndex = nodeSets.length;
+
+            const nodeSet = {
+              x: collection.x + s * nodeSetWidth + 6,
+              y: collection.y + 20,
+              width: nodeSetWidth - 6,
+              height: nodeSetHeight,
+              nodes: [],
+              globalIndex: globalNodeSetIndex, // 全局编号
+              collectionIndex: c, // 所属集合体索引
+              localIndex: s, // 在集合体内的本地索引
+            };
+
+            // 绘制节点集合外框
+            ctx.strokeStyle = "#2980b9";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+              nodeSet.x,
+              nodeSet.y,
+              nodeSet.width,
+              nodeSet.height
+            );
+
+            // 绘制节点集合标签（显示全局编号）
+            ctx.fillStyle = "#2c3e50";
+            ctx.font = "12px Arial";
+            ctx.fillText(
+              `${globalNodeSetIndex + 1}`,
+              nodeSet.x + 5,
+              nodeSet.y - 5
+            );
+
+            // 绘制子节点
+            const nodeSize = 20;
+            const nodeSpacing =
+              (nodeSet.width - 20) / Math.max(1, nodesPerSet - 1);
+
+            for (let n = 0; n < nodesPerSet; n++) {
+              const node = {
+                x: nodeSet.x + 10 + n * nodeSpacing,
+                y: nodeSet.y + 40,
+                size: nodeSize,
+                index: n + 1, // 节点在节点集合中的序号
+              };
+
+              // 绘制子节点
+              ctx.fillStyle = "#3498db";
+              ctx.fillRect(
+                node.x - nodeSize / 2,
+                node.y - nodeSize / 2,
+                nodeSize,
+                nodeSize
+              );
+
+              // 绘制子节点标签
+              ctx.fillStyle = "white";
+              ctx.font = "10px Arial";
+              ctx.fillText(`${n + 1}`, node.x - 4, node.y + 4);
+
+              nodeSet.nodes.push(node);
+            }
+
+            collection.nodeSets.push(nodeSet);
+            nodeSets.push(nodeSet);
+          }
+
+          collections.push(collection);
+        }
+
+        return collections;
+      }
+
+      // 绘制汇流点和连接
+      function drawConvergenceNodes(collections, nodesPerSet) {
+        const bendY = 220;
+        const collectionCount = collections.length;
+
+        // 确定哪些汇流点被跨接
+        const crossConnectionGroups = [];
+        const isCrossConnected = new Set(); // 记录所有被跨接的汇流点
+
+        // 处理跨接配置
+        crossConnections.forEach((group, groupIndex) => {
+          if (group && group.length > 0) {
+            const validGroup = group.filter(
+              (item) => item !== null && item !== undefined
+            );
+            if (validGroup.length > 0) {
+              // 记录跨接组
+              crossConnectionGroups.push({
+                points: validGroup,
+                color:
+                  crossConnectionColors[
+                  groupIndex % crossConnectionColors.length
+                  ],
+                mainPoint: validGroup[0],
+                groupIndex: groupIndex,
+              });
+
+              // 记录所有被跨接的汇流点
+              validGroup.forEach((point) => {
+                isCrossConnected.add(point);
+              });
+            }
+          }
+        });
+
+        // 首先绘制跨接线（在最底层）
+        drawCrossConnectionLines(
+          collections,
+          nodesPerSet,
+          crossConnectionGroups,
+          bendY
+        );
+
+        // 然后绘制所有连接到汇流点的线段
+        drawConvergenceConnections(
+          collections,
+          nodesPerSet,
+          bendY,
+          isCrossConnected,
+          crossConnectionGroups
+        );
+
+        // 最后绘制汇流点（在最顶层）
+        drawConvergencePoints(
+          collections,
+          nodesPerSet,
+          isCrossConnected,
+          crossConnectionGroups
+        );
+      }
+
+      // 绘制跨接线（在最底层）
+      function drawCrossConnectionLines(
+        collections,
+        nodesPerSet,
+        crossConnectionGroups,
+        bendY
+      ) {
+        const collectionCount = collections.length;
+
+        crossConnectionGroups.forEach((group) => {
+          if (group.points.length > 1) {
+            ctx.strokeStyle = group.color;
+            ctx.lineWidth = 4;
+
+            // 绘制跨接组内所有汇流点之间的连接线
+            for (let i = 0; i < group.points.length; i++) {
+              for (let j = i + 1; j < group.points.length; j++) {
+                const point1Index = group.points[i];
+                const point2Index = group.points[j];
+
+                const point1 = calculateConvergencePointPosition(
+                  collections,
+                  nodesPerSet,
+                  point1Index,
+                  group.groupIndex,
+                  crossConnectionGroups.length
+                );
+                const point2 = calculateConvergencePointPosition(
+                  collections,
+                  nodesPerSet,
+                  point2Index,
+                  group.groupIndex,
+                  crossConnectionGroups.length
+                );
+
+                if (point1 && point2) {
+                  ctx.beginPath();
+                  ctx.moveTo(point1.x, point1.y);
+                  ctx.lineTo(point2.x, point2.y);
+                  ctx.stroke();
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // 绘制连接到汇流点的线段
+      function drawConvergenceConnections(
+        collections,
+        nodesPerSet,
+        bendY,
+        isCrossConnected,
+        crossConnectionGroups
+      ) {
+        const collectionCount = collections.length;
+
+        for (let c = 0; c < collectionCount; c++) {
+          const collection = collections[c];
+          const convergenceSpacing = collection.width / (nodesPerSet + 1);
+
+          for (let i = 0; i < nodesPerSet; i++) {
+            const convergenceIndex = c * nodesPerSet + i + 1;
+
+            // 确定汇流点是否为跨接汇流点
+            const isCrossConvergence = isCrossConnected.has(convergenceIndex);
+
+            // 计算汇流点位置
+            let groupIndex = -1;
+            if (isCrossConvergence) {
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(convergenceIndex)) {
+                  groupIndex = group.groupIndex;
+                  break;
+                }
+              }
+            }
+
+            const convergenceNode = calculateConvergencePointPosition(
+              collections,
+              nodesPerSet,
+              convergenceIndex,
+              groupIndex,
+              crossConnectionGroups.length
+            );
+
+            // 确定汇流点颜色
+            let color;
+            if (isCrossConvergence) {
+              // 找到对应的跨接组颜色
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(convergenceIndex)) {
+                  color = group.color;
+                  break;
+                }
+              }
+            } else {
+              color =
+                convergenceColors[
+                convergenceIndex % convergenceColors.length
+                ];
+            }
+
+            // 绘制连接到每个节点集合的第i个节点
+            collection.nodeSets.forEach((nodeSet) => {
+              if (i < nodeSet.nodes.length) {
+                const node = nodeSet.nodes[i];
+
+                // 绘制垂直向下的线段
+                ctx.strokeStyle = color;
+                ctx.lineWidth = isCrossConvergence ? 3 : 2;
+                ctx.beginPath();
+                ctx.moveTo(node.x, node.y);
+                ctx.lineTo(node.x, bendY);
+                ctx.stroke();
+
+                // 绘制连接到汇流点的线段
+                ctx.beginPath();
+                ctx.moveTo(node.x, bendY);
+                ctx.lineTo(
+                  convergenceNode.x,
+                  convergenceNode.y - convergenceNode.size / 2
+                );
+                ctx.stroke();
+              }
+            });
+          }
+        }
+      }
+
+      // 绘制汇流点（在最顶层）
+      function drawConvergencePoints(
+        collections,
+        nodesPerSet,
+        isCrossConnected,
+        crossConnectionGroups
+      ) {
+        const collectionCount = collections.length;
+
+        // 获取所有汇流点位置，按从左到右排序
+        const allConvergencePoints = [];
+        for (let c = 0; c < collectionCount; c++) {
+          const collection = collections[c];
+          const convergenceSpacing = collection.width / (nodesPerSet + 1);
+
+          for (let i = 0; i < nodesPerSet; i++) {
+            const convergenceIndex = c * nodesPerSet + i + 1;
+
+            // 确定汇流点是否为跨接汇流点
+            const isCrossConvergence = isCrossConnected.has(convergenceIndex);
+
+            // 计算汇流点位置
+            let groupIndex = -1;
+            if (isCrossConvergence) {
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(convergenceIndex)) {
+                  groupIndex = group.groupIndex;
+                  break;
+                }
+              }
+            }
+
+            const convergenceNode = calculateConvergencePointPosition(
+              collections,
+              nodesPerSet,
+              convergenceIndex,
+              groupIndex,
+              crossConnectionGroups.length
+            );
+            convergenceNode.originalIndex = convergenceIndex;
+            convergenceNode.isCrossConnected = isCrossConvergence;
+
+            // 如果是跨接汇流点，找到它所属的组和主节点
+            if (isCrossConvergence) {
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(convergenceIndex)) {
+                  convergenceNode.group = group;
+                  convergenceNode.isMainNode =
+                    convergenceIndex === group.mainPoint;
+                  break;
+                }
+              }
+            }
+
+            allConvergencePoints.push(convergenceNode);
+          }
+        }
+
+        // 按x坐标从左到右排序
+        allConvergencePoints.sort((a, b) => a.x - b.x);
+
+        // 重新编号所有汇流点
+        renumberedPointsMap = {};
+        let nextAvailableNumber = 1;
+
+        allConvergencePoints.forEach((point) => {
+          if (point.isCrossConnected && !point.isMainNode) {
+            // 跨接组从节点不分配新编号
+          } else {
+            point.newIndex = nextAvailableNumber;
+            renumberedPointsMap[point.originalIndex] = nextAvailableNumber;
+            nextAvailableNumber++;
+          }
+        });
+
+        // 绘制所有汇流点
+        allConvergencePoints.forEach((point) => {
+          // 确定汇流点颜色
+          let color;
+          if (point.isCrossConnected) {
+            color = point.group.color;
+          } else {
+            color =
+              convergenceColors[
+              point.originalIndex % convergenceColors.length
+              ];
+          }
+
+          // 绘制汇流点
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, point.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 绘制汇流点标签 - 仅显示主节点编号或不跨接的节点编号
+          ctx.fillStyle = "white";
+          ctx.font = "bold 12px Arial";
+
+          if (point.isCrossConnected) {
+            // 如果是跨接组的主节点，显示主节点的新编号
+            if (point.isMainNode) {
+              ctx.fillText(`#${point.newIndex}`, point.x - 10, point.y + 4);
+            }
+            // 从节点不显示编号
+          } else {
+            // 非跨接节点显示新编号
+            ctx.fillText(`#${point.newIndex}`, point.x - 10, point.y + 4);
+          }
+        });
+      }
+
+      // 计算汇流点位置
+      function calculateConvergencePointPosition(
+        collections,
+        nodesPerSet,
+        convergenceIndex,
+        groupIndex,
+        crossConnectionGroupCount
+      ) {
+        const collectionIndex = Math.floor(
+          (convergenceIndex - 1) / nodesPerSet
+        );
+        const positionIndex = (convergenceIndex - 1) % nodesPerSet;
+        const collection = collections[collectionIndex];
+        const convergenceSpacing = collection.width / (nodesPerSet + 1);
+
+        // 确定汇流点的垂直位置
+        let convergenceY;
+        if (groupIndex >= 0) {
+          // 跨接汇流点：在下方，从320开始，每组间隔40像素
+          convergenceY = 320 + groupIndex * 40;
+        } else {
+          // 非跨接汇流点：在上方
+          convergenceY = 280;
+        }
+
+        return {
+          x: collection.x + (positionIndex + 1) * convergenceSpacing,
+          y: convergenceY,
+          size: 25,
+          originalIndex: convergenceIndex,
+          isCrossConnected: groupIndex >= 0,
+        };
+      }
+
+      // 更新节点集合分组信息
+      function updateNodeSetGroups(collections, nodesPerSet) {
+        // 清空之前的分组
+        window.nodeSetGroups = {};
+
+        // 确定哪些汇流点被跨接
+        const crossConnectionGroups = [];
+        const isCrossConnected = new Set();
+
+        // 处理跨接配置
+        crossConnections.forEach((group, groupIndex) => {
+          if (group && group.length > 0) {
+            const validGroup = group.filter(
+              (item) => item !== null && item !== undefined
+            );
+            if (validGroup.length > 0) {
+              // 记录跨接组
+              crossConnectionGroups.push({
+                points: validGroup,
+                mainPoint: validGroup[0],
+                groupIndex: groupIndex,
+              });
+
+              // 记录所有被跨接的汇流点
+              validGroup.forEach((point) => {
+                isCrossConnected.add(point);
+              });
+            }
+          }
+        });
+
+        // 为每个汇流点创建分组
+        for (let c = 0; c < collections.length; c++) {
+          for (let i = 0; i < nodesPerSet; i++) {
+            const convergenceIndex = c * nodesPerSet + i + 1;
+
+            // 确定汇流点是否为跨接汇流点
+            const isCrossConvergence = isCrossConnected.has(convergenceIndex);
+
+            // 如果是跨接汇流点，找到它所属的组和主节点
+            let mainConvergenceIndex = convergenceIndex;
+            if (isCrossConvergence) {
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(convergenceIndex)) {
+                  mainConvergenceIndex = group.mainPoint;
+                  break;
+                }
+              }
+            }
+
+            // 如果这个分组还不存在，创建它
+            if (!window.nodeSetGroups[mainConvergenceIndex]) {
+              window.nodeSetGroups[mainConvergenceIndex] = [];
+            }
+
+            // 将连接到这个汇流点的所有节点集合添加到分组中
+            collections[c].nodeSets.forEach((nodeSet) => {
+              window.nodeSetGroups[mainConvergenceIndex].push(
+                nodeSet.globalIndex
+              );
+            });
+          }
+        }
+
+        // 去除重复的节点集合（如果有）
+        for (const convergenceIndex in window.nodeSetGroups) {
+          window.nodeSetGroups[convergenceIndex] = [
+            ...new Set(window.nodeSetGroups[convergenceIndex]),
+          ];
+        }
+      }
+
+      // 更新汇流点与子节点的连接关系
+      function updateConvergenceConnections(collections, nodesPerSet) {
+        convergenceConnections = [];
+
+        // 确定哪些汇流点被跨接
+        const crossConnectionGroups = [];
+        const isCrossConnected = new Set();
+
+        // 处理跨接配置
+        crossConnections.forEach((group, groupIndex) => {
+          if (group && group.length > 0) {
+            const validGroup = group.filter(
+              (item) => item !== null && item !== undefined
+            );
+            if (validGroup.length > 0) {
+              // 记录跨接组
+              crossConnectionGroups.push({
+                points: validGroup,
+                mainPoint: validGroup[0],
+                groupIndex: groupIndex,
+              });
+
+              // 记录所有被跨接的汇流点
+              validGroup.forEach((point) => {
+                isCrossConnected.add(point);
+              });
+            }
+          }
+        });
+
+        // 遍历每个汇流点
+        for (let c = 0; c < collections.length; c++) {
+          for (let i = 0; i < nodesPerSet; i++) {
+            const originalConvergenceIndex = c * nodesPerSet + i + 1;
+
+            // 确定汇流点是否为跨接汇流点
+            const isCrossConvergence = isCrossConnected.has(
+              originalConvergenceIndex
+            );
+
+            // 获取重新编号后的汇流点编号
+            let convergenceNumber;
+            if (isCrossConvergence) {
+              // 如果是跨接汇流点，找到主节点的新编号
+              for (const group of crossConnectionGroups) {
+                if (group.points.includes(originalConvergenceIndex)) {
+                  convergenceNumber =
+                    renumberedPointsMap[group.mainPoint] || group.mainPoint;
+                  break;
+                }
+              }
+            } else {
+              // 非跨接汇流点直接使用新编号
+              convergenceNumber =
+                renumberedPointsMap[originalConvergenceIndex] ||
+                originalConvergenceIndex;
+            }
+
+            // 遍历连接到这个汇流点的所有节点集合
+            collections[c].nodeSets.forEach((nodeSet) => {
+              // 添加连接关系
+              convergenceConnections.push({
+                convergenceNumber: convergenceNumber,
+                nodeIndex: i + 1, // 子节点在节点集合中的序号
+                nodeSetIndex: nodeSet.globalIndex + 1, // 节点集合的编号（从1开始）
+              });
+            });
+          }
+        }
+      }
+      function outputConvergenceConnectionsToFile() {
+        var fileName = "pseudotopos.h";
+        var fileContent = "";
+
+        const collectionCount = parseInt(
+          document.getElementById("collectionCount").value
+        );
+        const nodeSetPerCollection = parseInt(
+          document.getElementById("nodeSetPerCollection").value
+        );
+        const nodesPerSet = parseInt(
+          document.getElementById("nodesPerSet").value
+        );
+
+
+        let connection_lastindex = 0;
+        // 按汇流点编号从小到大排序
+        convergenceConnections.sort((a, b) => {
+          return a.convergenceNumber - b.convergenceNumber;
+        });
+
+        // 按汇流点编号分组
+        const groupedByConvergence = {};
+        convergenceConnections.forEach((conn) => {
+          if (!groupedByConvergence[conn.convergenceNumber]) {
+            groupedByConvergence[conn.convergenceNumber] = [];
+          }
+          groupedByConvergence[conn.convergenceNumber].push(conn);
+        });
+        // 处理每个汇流点组
+        let keyValuePairs = [];
+        for (const convergenceNumber in groupedByConvergence) {
+          const connections = groupedByConvergence[convergenceNumber];
+          if (connections.length > 0) {
+
+            for (let i = 0; i < connections.length; i += nodeSetPerCollection) {
+              const firstConn = connections[i];
+              const contactorNumber = firstConn.nodeIndex + (firstConn.nodeSetIndex - 1) * nodesPerSet;
+              const formattedPlugNumber = String(firstConn.convergenceNumber).padStart(2, '0');
+              keyValuePairs.push(`{"u32gun${formattedPlugNumber}", ${contactorNumber}}`);
+            }
+            connection_lastindex = connections[0].convergenceNumber;
+          }
+        }
+        for (let i = 0; i < keyValuePairs.length; i += 6) {
+          const group = keyValuePairs.slice(i, i + 6);
+          fileContent += `param_ref = ADD_KEYVALUE(${group.join(', ')});\r\n`;
+        }
+
+        fileContent += "uint32_t u32pwrnodes_max = " + collectionCount * nodeSetPerCollection + ";\r\n";
+        fileContent += "uint32_t u32pwrcontactors_max = " + nodesPerSet * collectionCount * nodeSetPerCollection + ";\r\n";
+        fileContent += "uint32_t u32pool_max = " + collectionCount + ";\r\n";
+        fileContent += "uint32_t u32pwrguns_max = " + connection_lastindex + ";\r\n";
+        fileContent += "param_ref = ADD_INTEGER(u32pwrnodes_max, u32pwrguns_max, u32pwrcontactors_max, u32pool_max);\r\n";
+        downloadFile(fileContent, fileName);
+      }
+      // 输出节点集合分组信息到文件
+      function outputNodeSetGroupsToFile() {
+        const collectionCount = parseInt(
+          document.getElementById("collectionCount").value
+        );
+        const nodeSetPerCollection = parseInt(
+          document.getElementById("nodeSetPerCollection").value
+        );
+        const nodesPerSet = parseInt(
+          document.getElementById("nodesPerSet").value
+        );
+
+        let privateText = "";
+
+        privateText +=
+          '#ifdef PICKOUT_CONTACTANT\r\n#pragma message("structure and initialation deeds abt contactor introduced here...")\r\n';
+        for (let i = 0; i < nodesPerSet; i++) {
+          privateText += "CONTACTEE(" + (i + 1) + ")\r\n";
+        }
+        privateText += "#undef PICKOUT_CONTACTANT\r\n#endif\r\n\r\n";
+        privateText +=
+          '#ifdef PICKOUT_MUTUALREF\r\n#pragma message("compiling nodes heuristic linkage ...")\r\n';
+
+        // 按汇流点编号从小到大排序
+        convergenceConnections.sort((a, b) => {
+          return a.convergenceNumber - b.convergenceNumber;
+        });
+
+        // 按汇流点编号分组
+        const groupedByConvergence = {};
+        convergenceConnections.forEach((conn) => {
+          if (!groupedByConvergence[conn.convergenceNumber]) {
+            groupedByConvergence[conn.convergenceNumber] = [];
+          }
+          groupedByConvergence[conn.convergenceNumber].push(conn);
+        });
+        let connection_lastindex = 0;
+        // 处理每个汇流点组
+        for (const convergenceNumber in groupedByConvergence) {
+          const connections = groupedByConvergence[convergenceNumber];
+
+          // 第一个连接使用标准格式
+          if (connections.length > 0) {
+            const firstConn = connections[0];
+            privateText += `CONN_NODE(${firstConn.convergenceNumber}, ${firstConn.nodeIndex}, ${firstConn.nodeSetIndex})\r\n`;
+            connection_lastindex = firstConn.convergenceNumber;
+          }
+
+          // 后续连接添加前一个节点集合编号作为参数
+          for (let i = 1; i < connections.length; i++) {
+            const conn = connections[i];
+            const prevNodeSetIndex = connections[i - 1].nodeSetIndex;
+            privateText += `CONN_NODE(${conn.convergenceNumber}, ${conn.nodeIndex}, ${conn.nodeSetIndex}, ${prevNodeSetIndex})\r\n`;
+          }
+        }
+
+        privateText += "#undef PICKOUT_MUTUALREF\r\n#endif\r\n\r\n";
+        //输出预定义
+        let cnt = 0;
+        let publicText = "#pragma once\r\n\r\n";
+
+        publicText += "#define SUBNODES_PER_POOL  " + nodeSetPerCollection + "\r\n";
+
+        publicText += "#define CONTACTORS_PER_NODE  " + nodesPerSet + "\r\n";
+
+        publicText +=
+          "#define MAX_PLUGIN_NUM  " + connection_lastindex + "\r\n\r\n";
+        publicText += "typedef enum{\r\nPWRPOOL_UNKNOWN = 0,\r\n";
+        for (cnt = 0; cnt < collectionCount; cnt++) {
+          publicText += "PWRPOOL" + (cnt + 1) + ",\r\n";
+        }
+        publicText +=
+          "PWRPOOL_MAX=PWRPOOL" + cnt + "\r\n}PWRPOOL_ID;\r\n\r\n";
+        publicText += "typedef enum{\r\nPWRNODE_UNKNOWN = 0,\r\n";
+        for (cnt = 0; cnt < collectionCount * nodeSetPerCollection; cnt++) {
+          publicText +=
+            "PWRNODE" +
+            (Math.floor(cnt / nodeSetPerCollection) + 1) +
+            "_" +
+            ((cnt % nodeSetPerCollection) + 1) +
+            ",\r\n";
+        }
+        cnt = cnt - 1;
+        publicText +=
+          "PWRNODE_MAX=PWRNODE" +
+          (Math.floor(cnt / nodeSetPerCollection) + 1) +
+          "_" +
+          ((cnt % nodeSetPerCollection) + 1) +
+          "\r\n}PWRNODE_ID;\r\n\r\n";
+
+        publicText += "typedef enum{\r\nCONTACTOR_UNKNOWN = 0,\r\n";
+        for (
+          cnt = 0;
+          cnt < collectionCount * nodeSetPerCollection * nodesPerSet;
+          cnt++
+        ) {
+          publicText +=
+            "CONTACTOR" +
+            (Math.floor(cnt / (nodeSetPerCollection * nodesPerSet)) + 1) +
+            "_" +
+            Math.floor(
+              (cnt % (nodeSetPerCollection * nodesPerSet)) / nodesPerSet + 1
+            ) +
+            "_" +
+            ((cnt % nodesPerSet) + 1) +
+            ",\r\n";
+        }
+        cnt = cnt - 1;
+        publicText +=
+          "CONTACTOR_MAX=CONTACTOR" +
+          (Math.floor(cnt / (nodeSetPerCollection * nodesPerSet)) + 1) +
+          "_" +
+          Math.floor(
+            (cnt % (nodeSetPerCollection * nodesPerSet)) / nodesPerSet + 1
+          ) +
+          "_" +
+          ((cnt % nodesPerSet) + 1) +
+          "\r\n}CONTACTOR_ID;\r\n\r\n";
+        // 创建并下载 config_private.h
+        downloadFile(privateText, "config_private.h");
+
+        // 创建并下载 config_public.h
+        downloadFile(publicText, "config_public.h");
+      }
+
+      // 通用的文件下载函数
+      function downloadFile(content, filename) {
+        // 创建Blob对象
+        const blob = new Blob([content], { type: "text/plain" });
+
+        // 创建下载链接
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.style.display = "none";
+
+        // 添加到文档并触发点击
+        document.body.appendChild(a);
+        a.click();
+
+        // 清理
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(a.href);
+        }, 100);
+      }
+      // 初始化
+      function init() {
+        // 初始生成拓扑图
+        generateTopology();
+
+        // 初始创建跨接配置UI
+        const collectionCount = parseInt(
+          document.getElementById("collectionCount").value
+        );
+        const nodesPerSet = parseInt(
+          document.getElementById("nodesPerSet").value
+        );
+        createCrossConnectionUI(collectionCount, nodesPerSet);
+
+        // 添加事件监听器
+        document
+          .getElementById("collectionCount")
+          .addEventListener("change", function () {
+            const collectionCount = parseInt(this.value);
+            const nodesPerSet = parseInt(
+              document.getElementById("nodesPerSet").value
+            );
+            createCrossConnectionUI(collectionCount, nodesPerSet);
+            generateTopology();
+          });
+
+        document
+          .getElementById("nodeSetPerCollection")
+          .addEventListener("change", generateTopology);
+        document
+          .getElementById("nodesPerSet")
+          .addEventListener("change", function () {
+            const collectionCount = parseInt(
+              document.getElementById("collectionCount").value
+            );
+            const nodesPerSet = parseInt(this.value);
+            createCrossConnectionUI(collectionCount, nodesPerSet);
+            generateTopology();
+          });
+
+        // 添加输出按钮事件监听器
+        outputButton.addEventListener("click", outputConvergenceConnectionsToFile);
+      }
+
+      // 启动应用
+      init();
+    });
+  </script>
+</body>
+
+</html>
