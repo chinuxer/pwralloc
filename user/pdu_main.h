@@ -11,50 +11,17 @@
 #include <ctype.h>
 #include "inttypes.h"
 #include "math.h"
+#include "pdu_ex_datatype.h"
 
-typedef enum
-{
-    MOD_INIT = 0,   // 模块初始化
-    MOD_STANDBY,    // 模块待机
-    MOD_CHARGING,   // 模块充电中
-    MOD_FAULT,      // 模块故障
-    MOD_MAINTENANCE // 模块维护
-} ModuleStatus;
+#define RTT_RX_BUFFER_SIZE (256)
 
-typedef struct
-{
-    uint8_t pwrnode_id;  // 模块标识
-    float max_voltage;   // 最大输出电压
-    float max_current;   // 最大输出电流
-    float max_power;     // 最大输出功率
-    float current_power; // 当前输出功率
-    float temperature;   // 模块温度
-    ModuleStatus status; // 模块状态
-} PowerSupply;
-
-typedef enum
-{
-    PLUGIN_UNPLUGGED = 0, // 未插入
-    PLUGIN_PLUGGED,       // 已插入未充电
-    PLUGIN_CHARGING,      // 充电中
-    PLUGIN_SUSPENDED,     // 充电暂停
-    PLUGIN_FAULT          // 故障
-} PLuginStatus;
-
-typedef struct
-{
-    uint8_t plugin_id;   // 充电枪标识
-    float voltage_req;   // 电压需求
-    float current_req;   // 电流需求
-    float power_req;     // 功率需求
-    uint8_t priority;    // 优先级
-    PLuginStatus status; // 充电枪状态
-} PowerDemand;
-
-typedef struct
-{
-    uint8_t contactor_id; // 充电枪标识
-    bool onoff;
-} Contactor;
-
+#ifdef __DATABASE_IMPORT__
+PowerDemand PwrDemandObj[24] = {0};
+PowerSupply PwrSupplyObj[24] = {0};
+Contactor ContactorObj[144] = {0};
+#else
+extern PowerDemand PwrDemandObj[24];
+extern PowerSupply PwrSupplyObj[24];
+extern Contactor ContactorObj[144];
+#endif
 #endif

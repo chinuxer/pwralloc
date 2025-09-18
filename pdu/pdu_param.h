@@ -162,7 +162,7 @@ KeyValue_Array *add_KeyValue(const char *key, uint32_t val)
     static KeyValue_Array *array = NULL;
     size_t new_count = (array == NULL) ? 1 : array->count + 1;
     size_t new_size = sizeof(KeyValue_Array) + new_count * sizeof(KeyValue_Pair);
-    printf("key %s:%d\r\n", key, val);
+    // printf("key %s:%d\r\n", key, val);
     KeyValue_Array *new_array = realloc(array, new_size);
     if (new_array == NULL)
     {

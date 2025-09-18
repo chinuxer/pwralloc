@@ -88,7 +88,7 @@ uint32_t gear_num(const struct Alloc_plugObj *plug)
     }
     return num;
 }
-bool gear_insert(struct Alloc_nodeObj *plug, struct Alloc_nodeObj *target)
+bool gear_insert(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target)
 {
     if (!plug || !target || target->next_charger) // or target is already in a plug charging chain
     {
@@ -191,6 +191,7 @@ void Alloc_nodeArray_Init(void *const ptr, size_t n)
     for (int i = 1; i <= p->length; i++)
     {
         REF(p, i)->id = i;
+        REF(p, i)->next_charger = NULL;
     }
 }
 void Alloc_plugArray_Init(void *const ptr, size_t n)
@@ -376,16 +377,12 @@ bool hear_Canaries_Twittering(void)
     return true;
 }
 
-#define __PDU_CORE_EXPORT__
-#include "interware.h"
 void print_TopoGraph();
-void allocative_Routine(void)
-{
-}
+void linkage_print(void);
+void allocative_Routine(void);
 
 PDU_STA Main_of_PDU(PDU_CMD cmd)
 {
-
     switch (cmd)
     {
     case PDU_CMD_INITIAT:
@@ -394,6 +391,7 @@ PDU_STA Main_of_PDU(PDU_CMD cmd)
         {
             return PDU_STA_DISCARD;
         }
+        // linkage_print();
         print_TopoGraph();
         return PDU_STA_WORKING;
     }

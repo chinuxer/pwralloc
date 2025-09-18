@@ -1,18 +1,23 @@
-
+#include "pdu_ex_datatype.h"
 #ifdef __PDU_CORE_EXPORT__
 
 typedef PowerDemand PlugInfoInst, *PlugInfoPtr;
 typedef PowerSupply NodeInfoInst, *NodeInfoPtr;
 typedef Contactor ContactorinfoInst, *ContactorinfoPtr;
+typedef NodeInfoPtr (*func_get_pwrnode)(uint8_t);
+typedef PlugInfoPtr (*func_get_pwrplug)(uint8_t);
+typedef ContactorinfoPtr (*func_get_contactor)(uint8_t);
 typedef void (*func_set_pwrnode)(uint8_t, float, float);
 typedef void (*func_trace_alarm)(uint8_t, uint8_t, uint8_t);
 PlugInfoPtr __attribute__((weak)) PwrDemandObj;
 NodeInfoPtr __attribute__((weak)) PwrSupplyObj;
 ContactorinfoPtr __attribute__((weak)) ContactorObj;
+func_get_pwrnode __attribute__((weak)) get_PwrnodeInfo_ExportPDU;
+func_get_pwrplug __attribute__((weak)) get_PwrplugInfo_ExportPDU;
+func_get_contactor __attribute__((weak)) get_ContactorInfo_ExportPDU;
 func_set_pwrnode __attribute__((weak)) set_Pwrnode_Output;
 func_trace_alarm __attribute__((weak)) trace_Alarm;
-PlugInfoPtr
-get_PlugInfo(uint32_t plug_id)
+PlugInfoPtr get_PlugInfo(uint32_t plug_id)
 {
     return PwrDemandObj + plug_id;
 }
@@ -40,8 +45,11 @@ void register_external_symbol(const char *name, void *symbol)
     HANDLE_SYMBOL(NodeInfoPtr, PwrSupplyObj);
     HANDLE_SYMBOL(ContactorinfoPtr, ContactorObj);
     HANDLE_SYMBOL(func_set_pwrnode, set_Pwrnode_Output);
+    HANDLE_SYMBOL(func_get_contactor, get_ContactorInfo_ExportPDU);
+    HANDLE_SYMBOL(func_get_pwrnode, get_PwrnodeInfo_ExportPDU);
+    HANDLE_SYMBOL(func_get_pwrplug, get_PwrplugInfo_ExportPDU);
     HANDLE_SYMBOL(func_trace_alarm, trace_Alarm);
-    
+
     return;
 }
 #else

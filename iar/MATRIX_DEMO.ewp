@@ -684,7 +684,7 @@
             <data>
                 <extensions></extensions>
                 <cmdline></cmdline>
-                <hasPrio>192</hasPrio>
+                <hasPrio>1</hasPrio>
                 <buildSequence>inputOutputBased</buildSequence>
             </data>
         </settings>
@@ -2223,6 +2223,9 @@
     </group>
     <group>
         <name>user</name>
+        <file>
+            <name>$PROJ_DIR$\..\user\pdu_cli.c</name>
+        </file>
         <file>
             <name>$PROJ_DIR$\..\user\pdu_main.c</name>
         </file>

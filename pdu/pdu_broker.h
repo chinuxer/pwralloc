@@ -12,7 +12,6 @@
 #include <ctype.h>
 #include "inttypes.h"
 #include "math.h"
-#include "pdu_main.h"
 
 typedef enum
 {
@@ -62,11 +61,14 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 #define NODES_PER_POOL (gpNodesArray->forks_num)
 #define CONTACTORS_PER_NODE (gpContactorsArray->forks_num)
 #define POOL_MAX (gpNodesArray->pools_num)
-#define REF(pointer, seq) (pointer->obj_array + (seq - 1 < pointer->length ? seq - 1 : 0))
+#define REF(pointer, seq) ((pointer)->obj_array + ((seq) - 1 < pointer->length ? seq - 1 : 0))
 #define NODE_REF(node) (REF(gpNodesArray, node))
 #define PLUG_REF(plug) (REF(gpPlugsArray, plug))
-#define CONTACTOR_REF(plug) (REF(gpContactorsArray, plug))
-#define PLUG_LINKER_REF(pointer, plug) ((ListObj *)&REF(pointer, plug)->koinon)
+#define CONTACTOR_REF(knob) (REF(gpContactorsArray, knob))
+#define PLUG_LINKER_REF_INCOGNITA(pointer, plug) ((ListObj *)&REF(pointer, plug)->koinon)
+#define PLUG_LINKER_REF_NONYM(plug) ((ListObj *)&PLUG_REF(plug)->koinon)
+#define MACRO_PICKOUT(ARG1ST, ARG2ND, PICKED, ...) PICKED
+#define PLUG_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, PLUG_LINKER_REF_INCOGNITA, PLUG_LINKER_REF_NONYM)(__VA_ARGS__)
 #define CONTACTOR_LINKER_REF(pointer, knob) ((ListObj *)REF(pointer, knob))
 #define PLUG_CHARGER_REF(pointer, plug) (REF(pointer, plug)->next_charger)
 #define NODE_CHARGER_REF(pointer, node) (REF(pointer, node)->next_charger)
@@ -94,6 +96,7 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 typedef struct Proto_listObj
 {
     uint32_t id;
+    bool is_contactee;
     struct Proto_listObj *next_linker;
     struct Proto_listObj *prev_linker;
 } ListObj, *ListRef;
@@ -186,7 +189,7 @@ void *pdu_calloc(size_t size)
 }
 #endif // pdu_malloc
 uint32_t list_len_safe(const ListObj *list, uint32_t max);
-
+void print_oneliner(const char *format, ...);
 typedef enum
 {
     UNAVAILABLE = 0,

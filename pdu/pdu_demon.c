@@ -1,7 +1,7 @@
 
 #include "pdu_broker.h"
 
-void sleep(uint32_t ms)
+static void sleep(uint32_t ms)
 {
     while (ms--)
     {
@@ -12,6 +12,41 @@ void sleep(uint32_t ms)
         while (!(SysTick->CTRL & 0x00010000))
             ;
         SysTick->CTRL = 0;
+    }
+}
+
+bool gear_insert(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target);
+uint32_t gear_num(const struct Alloc_plugObj *plug);
+MATCHURE gear_remove(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target);
+
+void print_oneliner(const char *format, ...)
+{
+#define MAX_LINE 20
+    static int line_count = 0;
+
+    // Handle variadic arguments like printf
+    printf("\033[u");
+
+    if (!line_count)
+    {
+        printf("\033[J");
+    }
+    else
+    {
+        printf("\033[%dB", line_count);
+    }
+    // Print the prompt
+    printf("pdu >:");
+
+    // Handle variadic arguments and print the message
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+
+    if (format != NULL && strlen(format) > 0)
+    {
+        line_count = (line_count + 1) % MAX_LINE;
     }
 }
 void linkage_print(void)
@@ -37,6 +72,64 @@ void linkage_print(void)
             printf(" %d(%d,%d)", contactor_id, pool_id, pwrnode_id);
         }
         printf("\r\n");
+    }
+
+    gear_insert(PLUG_REF(1), NODE_REF(1));
+    gear_insert(PLUG_REF(1), NODE_REF(3));
+    gear_insert(PLUG_REF(1), NODE_REF(4));
+    gear_insert(PLUG_REF(1), NODE_REF(8));
+    gear_insert(PLUG_REF(2), NODE_REF(2));
+    gear_insert(PLUG_REF(2), NODE_REF(7));
+    gear_insert(PLUG_REF(6), NODE_REF(11));
+    gear_insert(PLUG_REF(6), NODE_REF(15));
+    gear_insert(PLUG_REF(6), NODE_REF(9));
+    gear_insert(PLUG_REF(11), NODE_REF(14));
+    gear_insert(PLUG_REF(12), NODE_REF(13));
+    gear_insert(PLUG_REF(12), NODE_REF(16));
+
+    const struct Alloc_nodeObj *pos;
+    printf("plug1 is charging by %d nodes:  ", gear_num(PLUG_REF(1)));
+    gear_for_each(pos, PLUG_REF(1))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n");
+    printf("plug2 is charging by %d nodes:  ", gear_num(PLUG_REF(2)));
+    gear_for_each(pos, PLUG_REF(2))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n");
+    printf("plug6 is charging by %d nodes:  ", gear_num(PLUG_REF(6)));
+    gear_for_each(pos, PLUG_REF(6))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n");
+    printf("plug11 is charging by %d nodes:  ", gear_num(PLUG_REF(11)));
+    gear_for_each(pos, PLUG_REF(11))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n");
+    printf("plug12 is charging by %d nodes:  ", gear_num(PLUG_REF(12)));
+    gear_for_each(pos, PLUG_REF(12))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n*******************************\r\n");
+    gear_remove(PLUG_REF(2), NODE_REF(7));
+    gear_remove(PLUG_REF(1), NODE_REF(3));
+    printf("plug1 is charging by %d nodes:  ", gear_num(PLUG_REF(1)));
+    gear_for_each(pos, PLUG_REF(1))
+    {
+        printf("%d ,", ID_OF(pos));
+    }
+    printf("\r\n");
+    printf("plug2 is charging by %d nodes\r\n", gear_num(PLUG_REF(2)));
+    gear_for_each(pos, PLUG_REF(2))
+    {
+        printf("%d ,", ID_OF(pos));
     }
 }
 
@@ -102,7 +195,7 @@ static void draw_frameline_pool(int matrix)
     printf("┛");
 }
 
-static void draw_pwrnode(int node)
+void draw_pwrnode(int node)
 {
     if (node < 1 || node > NODE_MAX)
     {
@@ -118,7 +211,7 @@ static void draw_pwrnode(int node)
     printf("%s%02d%6.1fA,%5.1fV %s", (dummy_I > 5 ? WHITE_ON_RED : WHITE_ON_GREEN), id, (double)dummy_I, (double)dummy_V, COLOR_RESET);
 }
 
-static void draw_plug(int plug)
+void draw_plug(int plug)
 {
     if (plug < 1 || plug > POOL_MAX * CONTACTORS_PER_NODE)
     {
@@ -140,7 +233,7 @@ static void draw_plug(int plug)
     printf("%s  %5.1fkW  %s", (PLUG_REF(plug)->energon ? WHITE_ON_RED : WHITE_ON_GREEN), (double)PLUG_REF(plug)->demand, COLOR_RESET);
     printf("\033[1A");
 }
-static void draw_contactor(int contactor)
+void draw_contactor(int contactor)
 {
     if (contactor < 1 || contactor > CONTACTOR_MAX)
     {
@@ -165,6 +258,7 @@ void print_TopoGraph()
         draw_frameline_pool(matrix);
         sleep(250);
     }
+    sleep(500);
     for (int node = 1; node <= NODE_MAX; node++)
     {
         draw_pwrnode(node);
@@ -174,11 +268,15 @@ void print_TopoGraph()
     {
         draw_plug(plug);
     }
-    sleep(250);
+    sleep(500);
     for (int contactor = 1; contactor <= CONTACTOR_MAX; contactor++)
     {
         draw_contactor(contactor);
     }
-    printf("\r\n\r\n");
-    printf("\033[?25l");
+    printf("\r\n\r\n\r\n\r\n");
+    printf("支持命令格式: in(#{充电桩序号},{功率}kw,{优先级})  | 示例: in(#1,50kw,2)  //插入充电枪头\r\n");
+    printf("              ex(#{充电桩序号})                    | 示例: ex(#2)  //拔出充电枪头\r\n");
+    printf("\033[s");
+    printf("pdu >:");
+    // printf("\033[?25l");
 }
