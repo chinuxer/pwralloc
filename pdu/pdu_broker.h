@@ -25,6 +25,16 @@ typedef enum
     DONE,
 } RESULTANT;
 
+typedef enum
+{
+    CRITERION_NONE = 0,
+    CRITERION_PRIOR,          // 车优先级
+    CRITERION_MIN_COST,       // 经济运行
+    CRITERION_MAX_POWER,      // 最大需求
+    CRITERION_EQU_SANITY,     // 均衡健康度
+    CRITERION_LMT_CAPACITY,   // 单铜排限电流容量
+    CRITERION_MAX_EFFICIENCY, // 模块效率
+} CRITERION;
 /*******************************************************************************
  * Definitely Needed Macros
  ******************************************************************************/
@@ -41,7 +51,7 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 #define CONTACTORARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 2)
 #define PLUGARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 3)
 
-#define IN_PDU_RAM_SECTION __attribute__((section(".pdu_ram_section")))
+#define IN_PDU_RAM_SECTION __attribute__((section(".pdu_ram_section"), aligned(4)))
 #define IN_PDU_HEAP_SECTION __attribute__((section(".pdu_heap_section")))
 #define RAM_CAPACITY (__PDU_CORE_RAM_size__ / sizeof(ptrdiff_t))
 
@@ -61,20 +71,24 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 #define NODES_PER_POOL (gpNodesArray->forks_num)
 #define CONTACTORS_PER_NODE (gpContactorsArray->forks_num)
 #define POOL_MAX (gpNodesArray->pools_num)
+#define NODE_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE + 1)
+#define POOL_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE / NODES_PER_POOL + 1)
 #define REF(pointer, seq) ((pointer)->obj_array + ((seq) - 1 < pointer->length ? seq - 1 : 0))
 #define NODE_REF(node) (REF(gpNodesArray, node))
 #define PLUG_REF(plug) (REF(gpPlugsArray, plug))
 #define CONTACTOR_REF(knob) (REF(gpContactorsArray, knob))
 #define PLUG_LINKER_REF_INCOGNITA(pointer, plug) ((ListObj *)&REF(pointer, plug)->koinon)
 #define PLUG_LINKER_REF_NONYM(plug) ((ListObj *)&PLUG_REF(plug)->koinon)
+#define CONTACTOR_LINKER_REF_INCOGNITA(pointer, knob) ((ListObj *)REF(pointer, knob))
+#define CONTACTOR_LINKER_REF_NONYM(knob) ((ListObj *)CONTACTOR_REF(knob))
 #define MACRO_PICKOUT(ARG1ST, ARG2ND, PICKED, ...) PICKED
 #define PLUG_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, PLUG_LINKER_REF_INCOGNITA, PLUG_LINKER_REF_NONYM)(__VA_ARGS__)
-#define CONTACTOR_LINKER_REF(pointer, knob) ((ListObj *)REF(pointer, knob))
+#define CONTACTOR_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, CONTACTOR_LINKER_REF_INCOGNITA, CONTACTOR_LINKER_REF_NONYM)(__VA_ARGS__)
 #define PLUG_CHARGER_REF(pointer, plug) (REF(pointer, plug)->next_charger)
 #define NODE_CHARGER_REF(pointer, node) (REF(pointer, node)->next_charger)
 #define ID_OF(x) ((x)->id)
 #define NODEREF_FROM_CONTACTOR(knob) (NODE_REF((knob - 1) / CONTACTORS_PER_NODE % NODE_MAX + 1))
-#define POOL_OF(node) ((ID_OF(NODE_REF(node)) - 1) / NODES_PER_POOL % POOL_MAX + 1)
+#define POOL_OF_NODE(node) ((ID_OF(NODE_REF(node)) - 1) / NODES_PER_POOL % POOL_MAX + 1)
 #define gear_for_each(pos, head) \
     for (pos = (head)->next_charger; pos != ENDING; pos = pos->next_charger)
 #define list_for_each(pos, head) \
@@ -86,9 +100,9 @@ extern uint32_t __PDU_CORE_HEAP_size__;
  * @n:      another &struct list_head to use as temporary storage
  * @head:   the head for your list.
  */
-#define list_for_each_safe(pos, n, head)                   \
-    for (pos = (head)->next, n = pos->next; pos != (head); \
-         pos = n, n = pos->next)
+#define list_for_each_safe(pos, n, head)                                 \
+    for (pos = (head)->next_linker, n = pos->next_linker; pos != (head); \
+         pos = n, n = pos->next_linker)
 
 /*******************************************************************************
  * Data Structures
@@ -107,6 +121,7 @@ struct Alloc_nodeObj
     uint32_t id;
     float value_Iset;
     float value_Vset;
+    uint32_t adaptness;
     bool energon;
     struct Alloc_nodeObj *next_charger;
     //...
@@ -142,6 +157,7 @@ typedef struct
 {
     uint32_t front_canary; // absolutely required to be top element
     size_t length;
+    CRITERION criterion;
     struct Alloc_plugObj obj_array[];
 } Alloc_plugArray;
 
@@ -199,9 +215,11 @@ typedef enum
 typedef enum
 {
     PDU_STA_NOREADY = 0, // PDU未就绪
-    PDU_STA_WORKING,     // PDU运行
-    PDU_STA_DISCARD,     // PDU故障
-    PDU_STA_STANDBY,     // PDU旁路
+
+    PDU_STA_DISCARD, // PDU故障
+    PDU_STA_WORKING, // PDU运行
+    PDU_STA_STANDBY, // PDU旁路
+    PDU_STA_TOPOGRAPH,
     PDU_STA_UNKNOWN
 } PDU_STA;
 typedef enum
@@ -209,7 +227,8 @@ typedef enum
     PDU_CMD_INITIAT = 0, // 模块初始
     PDU_CMD_STANDBY,     // 模块旁路
     PDU_CMD_WORKON,      // 模块工作
-    PDU_CMD_VISUAL       // 模块可视
+    PDU_CMD_VISUAL,      // 模块可视
+    PDU_CMD_UNKNOWN
 } PDU_CMD;
 
 #endif // PDUBROKER_H

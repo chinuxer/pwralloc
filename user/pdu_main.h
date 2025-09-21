@@ -12,9 +12,10 @@
 #include "inttypes.h"
 #include "math.h"
 #include "pdu_ex_datatype.h"
+#include "stm32f4xx.h"
+#include "SEGGER_RTT.h"
 
-#define RTT_RX_BUFFER_SIZE (256)
-
+void print_oneliner(const char *format, ...);
 #ifdef __DATABASE_IMPORT__
 PowerDemand PwrDemandObj[24] = {0};
 PowerSupply PwrSupplyObj[24] = {0};

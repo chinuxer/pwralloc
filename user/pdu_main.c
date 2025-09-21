@@ -1,13 +1,10 @@
-
-#include "stm32f4xx.h"
-#include "SEGGER_RTT.h"
 #include "pdu_param.h"
 #include "interware.h"
 #define __DATABASE_IMPORT__
 #include "pdu_main.h"
 
 KeyValue_Array *gTopoConfigParam = NULL;
-
+PDU_CMD gPDU_Command = PDU_CMD_STANDBY;
 void pseudotopos(void)
 {
     KeyValue_Array *param_ref = NULL;
@@ -42,7 +39,7 @@ PowerDemand *get_PwrplugInfo_ExportPDU(uint8_t plug_id)
     {
         return NULL;
     }
-    return PwrDemandObj + plug_id;
+    return PwrDemandObj + plug_id - 1;
 }
 PowerSupply *get_PwrnodeInfo_ExportPDU(uint8_t node_id)
 {
@@ -55,14 +52,14 @@ PowerSupply *get_PwrnodeInfo_ExportPDU(uint8_t node_id)
 
 void set_Pwrnode_Output(uint8_t contactor_id, float voltage, float current)
 {
-    print_oneliner("set_Pwrnode_Output: contactor_id=%d, voltage=%f, current=%f\r\n", contactor_id, voltage, current);
+    print_oneliner("[PCU] set_Pwrnode_Output: contactor_id=%d, voltage=%f, current=%f", contactor_id, voltage, current);
 }
 void trace_Alarm(uint8_t node_id, uint8_t alarm_level, uint8_t alarm_status)
 {
-    print_oneliner("trace_Alarm: node_id=%d, alarm_level=%d, alarm_status=%d\r\n", node_id, alarm_level, alarm_status);
+    print_oneliner("trace_Alarm: node_id=%d, alarm_level=%d, alarm_status=%d", node_id, alarm_level, alarm_status);
 }
 
-PDU_STA Main_of_PDU(PDU_CMD cmd);
+PDU_STA FSM_mainEntry_PDU(PDU_CMD cmd);
 void register_to_pdu(void)
 {
     EXPORT_COPYOUT_OF(set_Pwrnode_Output);
@@ -75,6 +72,10 @@ void register_to_pdu(void)
     EXPORT_COPYOUT_OF(trace_Alarm);
 }
 
+void set_Cmd_of_PDU(PDU_CMD cmd)
+{
+    gPDU_Command = cmd;
+}
 void rtt_cli_task(void);
 int main(void)
 {
@@ -83,16 +84,13 @@ int main(void)
     pseudotopos();
 
     PDU_STA state = PDU_STA_UNKNOWN;
-    for (state = Main_of_PDU(PDU_CMD_INITIAT); PDU_STA_WORKING == state; state = Main_of_PDU(PDU_CMD_WORKON))
+    set_Cmd_of_PDU(PDU_CMD_WORKON);
+    for (state = FSM_mainEntry_PDU(PDU_CMD_INITIAT); PDU_STA_WORKING <= state; state = FSM_mainEntry_PDU(gPDU_Command))
     {
+        if (PDU_STA_TOPOGRAPH == state)
+        {
+            set_Cmd_of_PDU(PDU_CMD_WORKON);
+        }
         rtt_cli_task();
-        if (0)
-        {
-            state = Main_of_PDU(PDU_CMD_STANDBY);
-        }
-        if (0)
-        {
-            state = Main_of_PDU(PDU_CMD_VISUAL);
-        }
     }
 }

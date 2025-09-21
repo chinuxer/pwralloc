@@ -1,6 +1,37 @@
 
 #include "pdu_broker.h"
+#include "pdu_ex_datatype.h"
+#define PRELITTER "pdu >:"
 
+typedef enum
+{
+    CURSOR_INC = 1,
+    CURSOR_FIX,
+    CURSOR_CLR
+} CURSOR_OPRT;
+static int fetch_current_cursor_raw(CURSOR_OPRT oprt)
+{
+#define MAX_LINE 20
+    static int current_line IN_PDU_RAM_SECTION = 0;
+    if (CURSOR_CLR == oprt)
+    {
+        current_line = 0;
+        return 0;
+    }
+    else if (CURSOR_FIX == oprt)
+    {
+        return current_line;
+    }
+    else if (CURSOR_INC == oprt)
+    {
+        current_line = (current_line + 1) % MAX_LINE;
+        return current_line;
+    }
+    else
+    {
+        return 0;
+    }
+}
 static void sleep(uint32_t ms)
 {
     while (ms--)
@@ -21,22 +52,21 @@ MATCHURE gear_remove(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target);
 
 void print_oneliner(const char *format, ...)
 {
-#define MAX_LINE 20
-    static int line_count = 0;
 
+    int current_line = fetch_current_cursor_raw(CURSOR_INC);
     // Handle variadic arguments like printf
     printf("\033[u");
 
-    if (!line_count)
+    if (!current_line)
     {
         printf("\033[J");
     }
     else
     {
-        printf("\033[%dB", line_count);
+        printf("\033[%dB", current_line);
     }
     // Print the prompt
-    printf("pdu >:");
+    printf(PRELITTER);
 
     // Handle variadic arguments and print the message
     va_list args;
@@ -46,7 +76,9 @@ void print_oneliner(const char *format, ...)
 
     if (format != NULL && strlen(format) > 0)
     {
-        line_count = (line_count + 1) % MAX_LINE;
+        current_line = fetch_current_cursor_raw(CURSOR_INC);
+        printf("\033[1E");
+        printf(PRELITTER);
     }
 }
 void linkage_print(void)
@@ -195,7 +227,13 @@ static void draw_frameline_pool(int matrix)
     printf("┛");
 }
 
-void draw_pwrnode(int node)
+static inline void recover_pos(void)
+{
+    printf("\033[u");
+    printf("\033[%dB", fetch_current_cursor_raw(CURSOR_FIX));
+    printf("\033[%dC", strnlen(PRELITTER, 6));
+}
+void draw_pwrnode(int node, bool post_scrip)
 {
     if (node < 1 || node > NODE_MAX)
     {
@@ -204,14 +242,18 @@ void draw_pwrnode(int node)
     int matrix = (node - 1) / NODES_PER_POOL;
     int node_per_matrix = (node - 1) % NODES_PER_POOL;
     int id = NODE_REF(node)->id;
-    float dummy_I = NODE_REF(node)->value_Iset + rand() % 100 / 10.0f;
-    float dummy_V = NODE_REF(node)->value_Vset + rand() % 100 / 10.0f;
+    float dummy_I = NODE_REF(node)->value_Iset + rand() % 100 / 100.0f;
+    float dummy_V = NODE_REF(node)->value_Vset + rand() % 100 / 50.0f;
     printf("\033[H");
     printf("\033[%dB", (int)(HEIGHT_OF_TOPFRAME + (CONTACTORS_PER_NODE * 2 + 6) * matrix + node_per_matrix * 2));
-    printf("%s%02d%6.1fA,%5.1fV %s", (dummy_I > 5 ? WHITE_ON_RED : WHITE_ON_GREEN), id, (double)dummy_I, (double)dummy_V, COLOR_RESET);
+    printf("%s%02d%6.1fA,%5.1fV %s", (dummy_I > 10.0f ? WHITE_ON_RED : WHITE_ON_GREEN), id, (double)dummy_I, (double)dummy_V, COLOR_RESET);
+    if (post_scrip)
+    {
+        recover_pos();
+    }
 }
 
-void draw_plug(int plug)
+void draw_plug(int plug, bool post_scrip)
 {
     if (plug < 1 || plug > POOL_MAX * CONTACTORS_PER_NODE)
     {
@@ -227,13 +269,17 @@ void draw_plug(int plug)
     const struct Alloc_plugObj *header = get_header_plug(id);
 
     id = header ? ID_OF(header) : 99;
-    printf("%s  PLUG#%02d  %s", (PLUG_REF(plug)->energon ? WHITE_ON_RED : WHITE_ON_GREEN), id, COLOR_RESET);
+    printf("%s  PLUG#%02d  %s", (PLUG_REF(id)->energon ? WHITE_ON_RED : WHITE_ON_GREEN), id, COLOR_RESET);
     printf("\033[1B");
     printf("\033[%dG", col_start);
-    printf("%s  %5.1fkW  %s", (PLUG_REF(plug)->energon ? WHITE_ON_RED : WHITE_ON_GREEN), (double)PLUG_REF(plug)->demand, COLOR_RESET);
+    printf("%s  %5.1fkW  %s", (PLUG_REF(id)->energon ? WHITE_ON_RED : WHITE_ON_GREEN), (double)PLUG_REF(id)->demand, COLOR_RESET);
     printf("\033[1A");
+    if (post_scrip)
+    {
+        recover_pos();
+    }
 }
-void draw_contactor(int contactor)
+void draw_contactor(int contactor, bool post_scrip)
 {
     if (contactor < 1 || contactor > CONTACTOR_MAX)
     {
@@ -246,37 +292,44 @@ void draw_contactor(int contactor)
     printf("\033[%dB", (int)(HEIGHT_OF_TOPFRAME + (CONTACTORS_PER_NODE * 2 + 6) * matrix + node * 2));
     int col_start = COLPOS_OF_CHARGEE1 + 5 + contactor_per_matrix * (WIDTH_OF_CHARGEE + 4);
     printf("\033[%dG", col_start);
-    printf("%s%s%s", (1 ? COLOR_RED : COLOR_GREEN), "◼", COLOR_RESET);
+    printf("%s%s%s", (CONTACTOR_REF(contactor)->is_contactee ? COLOR_RED : COLOR_GREEN), "◼", COLOR_RESET);
+    if (post_scrip)
+    {
+        recover_pos();
+    }
 }
 
 void print_TopoGraph()
 {
+    fetch_current_cursor_raw(CURSOR_CLR);
     draw_logo();
     sleep(250);
     for (int matrix = 1; matrix <= POOL_MAX; matrix++)
     {
         draw_frameline_pool(matrix);
-        sleep(250);
+        sleep(150);
     }
-    sleep(500);
     for (int node = 1; node <= NODE_MAX; node++)
     {
-        draw_pwrnode(node);
+        draw_pwrnode(node, false);
     }
-    sleep(250);
+    sleep(150);
     for (int plug = 1; plug <= POOL_MAX * CONTACTORS_PER_NODE; plug++)
     {
-        draw_plug(plug);
+        draw_plug(plug, false);
     }
-    sleep(500);
+    sleep(150);
     for (int contactor = 1; contactor <= CONTACTOR_MAX; contactor++)
     {
-        draw_contactor(contactor);
+        draw_contactor(contactor, false);
     }
+    sleep(250);
     printf("\r\n\r\n\r\n\r\n");
-    printf("支持命令格式: in(#{充电桩序号},{功率}kw,{优先级})  | 示例: in(#1,50kw,2)  //插入充电枪头\r\n");
-    printf("              ex(#{充电桩序号})                    | 示例: ex(#2)  //拔出充电枪头\r\n");
+    printf(COLOR_YELLOW);
+    printf("支持命令格式: in(#{充电桩序号},{电流}A,{优先级})   | 示例: in(#1,250A,2)    //插入充电枪头\r\n");
+    printf("              ex(#{充电桩序号})                    | 示例: ex(#2)           //拔出充电枪头\r\n\r\n");
+    printf(COLOR_RESET);
     printf("\033[s");
-    printf("pdu >:");
-    // printf("\033[?25l");
+    printf(PRELITTER);
+    printf("\033[?25l");
 }

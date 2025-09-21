@@ -156,7 +156,15 @@ KeyValue_Pair make_keyvalue(const char *key, uint32_t val)
     strncpy(pair.key, key, 20);
     return pair;
 }
-KeyValue_Array *gParam;
+KeyValue_Array *oprt_TopoParam(KeyValue_Array *param)
+{
+    static KeyValue_Array *gparam = NULL;
+    if (param)
+    {
+        gparam = param;
+    }
+    return gparam;
+}
 KeyValue_Array *add_KeyValue(const char *key, uint32_t val)
 {
     static KeyValue_Array *array = NULL;
@@ -172,8 +180,8 @@ KeyValue_Array *add_KeyValue(const char *key, uint32_t val)
     new_array->pairs[new_count - 1] = make_keyvalue(key, val);
     new_array->count = new_count;
     array = new_array;
-    gParam = array;
-    return new_array;
+
+    return oprt_TopoParam(new_array);
 }
 
 uint32_t find_KeyValue(const KeyValue_Array *array, const char *key)

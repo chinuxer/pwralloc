@@ -1,6 +1,7 @@
 #ifndef _EXPORT_DATATYPE_H_
 #define _EXPORT_DATATYPE_H_
 
+#define RTT_RX_BUFFER_SIZE (256)
 typedef enum
 {
     MOD_INIT = 0,   // 模块初始化

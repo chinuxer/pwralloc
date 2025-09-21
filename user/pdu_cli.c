@@ -1,5 +1,6 @@
 #include "pdu_main.h"
-
+#include "pdu_broker.h"
+#define COMMAND_OUT_SHOWTOPO "topo"
 #define COMMAND_IN_PREFIX "in("
 #define COMMAND_OUT_PREFIX "ex("
 #define COMMAND_SUFFIX ")"
@@ -9,30 +10,37 @@
 typedef struct
 {
     int charger_id; // 充电桩序号
-    int power_kw;   // 所需功率 (kW)
+    int current_A;  // 所需电流 (A)
     int priority;   // 优先级 (0-3)
     int valid;      // 参数是否有效
 } PluginCommand;
 
 enum
 {
-    PDU_CMD_INVALID = 0,
-    PDU_CMD_PLUGOUT = 1,
-    PDU_CMD_PLUGIN = 2,
+    CLI_CMD_INVALID = 0,
+    CLI_CMD_PLUGOUT = 1,
+    CLI_CMD_PLUGIN = 2,
 };
 
-void handle_plugin(int id, int power_kw, int priority)
+void handle_plugin(int id, int current_A, int priority)
 {
     if (id < 1 || id > sizeof(PwrDemandObj) / sizeof(PwrDemandObj[0]))
     {
         return;
     }
-    PwrDemandObj[id].power_req = power_kw * 1.0f;
+    id -= 1;
+    float dummy_V = 400.0f;
+    PwrDemandObj[id].power_req = dummy_V * current_A * 0.001f;
     PwrDemandObj[id].priority = priority;
     PwrDemandObj[id].status = PLUGIN_PLUGGED;
 }
 void handle_plugout(int id)
 {
+    if (id < 1 || id > sizeof(PwrDemandObj) / sizeof(PwrDemandObj[0]))
+    {
+        return;
+    }
+    id -= 1;
     PwrDemandObj[id].power_req = 0.0f;
     PwrDemandObj[id].priority = 0;
     PwrDemandObj[id].status = PLUGIN_UNPLUGGED;
@@ -77,7 +85,7 @@ PluginCommand parse_command_plugout(const char *cmd)
         return result;
     }
     // 所有参数解析成功
-    result.valid = PDU_CMD_PLUGOUT;
+    result.valid = CLI_CMD_PLUGOUT;
     return result;
 }
 PluginCommand parse_command_plugin(const char *cmd)
@@ -118,26 +126,26 @@ PluginCommand parse_command_plugin(const char *cmd)
         return result;
     }
 
-    // 解析第二个参数: 功率 (kW)
+    // 解析第二个参数: 需求电流 (A)
     token = strtok(NULL, ",");
     if (token == NULL)
     {
         return result;
     }
-    int kw_len = strlen("kw");
+    int A_len = strlen("A");
     int power_str_len = strlen(token);
-    if (power_str_len < kw_len + 1)
+    if (power_str_len < A_len + 1)
     {
         return result;
     }
-    if (strncmp(&token[power_str_len - kw_len], "kw", kw_len) != 0)
+    if (strncmp(&token[power_str_len - A_len], "A", A_len) != 0)
     {
         return result;
     }
-    strncpy(temp, token, power_str_len - kw_len);
-    temp[power_str_len - kw_len] = '\0';
-    result.power_kw = atoi(temp);
-    if (result.power_kw <= 0)
+    strncpy(temp, token, power_str_len - A_len);
+    temp[power_str_len - A_len] = '\0';
+    result.current_A = atoi(temp);
+    if (result.current_A <= 0)
     {
         return result;
     }
@@ -155,7 +163,7 @@ PluginCommand parse_command_plugin(const char *cmd)
     }
 
     // 所有参数解析成功
-    result.valid = PDU_CMD_PLUGIN;
+    result.valid = CLI_CMD_PLUGIN;
     return result;
 }
 
@@ -164,32 +172,33 @@ void handle_command(const PluginCommand *cmd)
 {
     if (!cmd->valid)
     {
-        print_oneliner("命令格式错误! 正确格式: plugin(#{序号},{功率}kw,{优先级})\n");
+        print_oneliner("Invalid formatted input");
         return;
     }
 
     // 在这里添加命令处理逻辑
     // printf("解析到有效命令:\n");
     // printf("  充电桩序号: %d\n", cmd->charger_id);
-    // printf("  所需功率: %d kW\n", cmd->power_kw);
+    // printf("  所需电流: %d A\n", cmd->current_A);
     // printf("  优先级: %d\n", cmd->priority);
 
     switch (cmd->valid)
     {
-    case PDU_CMD_PLUGOUT:
+    case CLI_CMD_PLUGOUT:
         // print_oneliner("plug#%d out\r\n", cmd->charger_id);
         handle_plugout(cmd->charger_id);
         break;
-    case PDU_CMD_PLUGIN:
+    case CLI_CMD_PLUGIN:
         // print_oneliner("plug#%d in\r\n", cmd->charger_id);
-        handle_plugin(cmd->charger_id, cmd->power_kw, cmd->priority);
+        handle_plugin(cmd->charger_id, cmd->current_A, cmd->priority);
         break;
     default:
         break;
     }
 }
 
-// 主循环: 接收并处理命令
+void set_Cmd_of_PDU(PDU_CMD cmd);
+
 void rtt_cli_task(void)
 {
     static char rtt_rx_buffer[RTT_RX_BUFFER_SIZE] = {0};
@@ -223,22 +232,31 @@ void rtt_cli_task(void)
                 {
                     parsefunc = parse_command_plugout;
                 }
+                else if (strncmp(rtt_rx_buffer, COMMAND_OUT_SHOWTOPO, strnlen(COMMAND_OUT_SHOWTOPO, RTT_RX_BUFFER_SIZE)) == 0)
+                {
+                    parsefunc = NULL;
+                    set_Cmd_of_PDU(PDU_CMD_VISUAL);
+                }
+                else
+                {
+                    print_oneliner("[PDU] Unknown command 👉: %s", rtt_rx_buffer);
+                }
 
                 if (parsefunc)
                 {
                     PluginCommand cmd = parsefunc(rtt_rx_buffer);
                     handle_command(&cmd);
+                    if (!cmd_processed)
+                    {
+                        print_oneliner("");
+                    } // 打印新提示符，理论上这里只会在处理完命令后打印一次
+                    cmd_processed = true; // 标记命令已处理
                 }
             }
 
             // 无论是否处理了命令，遇到换行符都重置缓冲区和索引，准备接收新命令
             rx_index = 0;
             memset(rtt_rx_buffer, 0, RTT_RX_BUFFER_SIZE);
-            if (!cmd_processed)
-            {
-                print_oneliner("");
-            } // 打印新提示符，理论上这里只会在处理完命令后打印一次
-            cmd_processed = true; // 标记命令已处理
         }
         // 处理退格键
         else if (c == '\b')

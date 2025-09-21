@@ -143,7 +143,7 @@ const struct Alloc_plugObj *get_header_plug(uint32_t contactor_id)
     {
         return NULL;
     }
-    const ListObj *list = CONTACTOR_LINKER_REF(gpContactorsArray, contactor_id);
+    const ListObj *list = CONTACTOR_LINKER_REF(contactor_id);
     const ListObj *pos;
     list_for_each(pos, list)
     {
@@ -282,12 +282,12 @@ static bool list_plug_join(const Combo_Koinon *array, uint32_t max)
             return false;
         }
         uint32_t top = top_within_col_of(array[i].id_of.contactor);
-        list_insert_after(PLUG_LINKER_REF(gpPlugsArray, array[i].id_of.plug), CONTACTOR_LINKER_REF(gpContactorsArray, top));
+        list_insert_after(PLUG_LINKER_REF(gpPlugsArray, array[i].id_of.plug), CONTACTOR_LINKER_REF(top));
         for (uint8_t row = 0; row < (NODES_PER_POOL - 1); row++)
         {
             uint32_t prev = top - row * CONTACTORS_PER_NODE;
             uint32_t next = top - (row + 1) * CONTACTORS_PER_NODE;
-            list_insert_after(CONTACTOR_LINKER_REF(gpContactorsArray, prev), CONTACTOR_LINKER_REF(gpContactorsArray, next));
+            list_insert_after(CONTACTOR_LINKER_REF(prev), CONTACTOR_LINKER_REF(next));
         }
     }
     return true;
@@ -295,7 +295,10 @@ static bool list_plug_join(const Combo_Koinon *array, uint32_t max)
 bool linkup_PlgnNdInit(KeyValue_Array *param_ref)
 {
 #define PARSE_KEYVALUE_ARRAY(token) uint32_t token = PICKOUT_KEYVALUE(param_ref, #token)
-
+    if (!param_ref)
+    {
+        return false;
+    }
     PARSE_KEYVALUE_ARRAY(u32pwrnodes_max);
     if (!u32pwrnodes_max)
     {
@@ -376,23 +379,29 @@ bool hear_Canaries_Twittering(void)
     }
     return true;
 }
-
+bool chk_registered_symbol(void);
 void print_TopoGraph();
 void linkage_print(void);
 void allocative_Routine(void);
 
-PDU_STA Main_of_PDU(PDU_CMD cmd)
+PDU_STA FSM_mainEntry_PDU(PDU_CMD cmd)
 {
     switch (cmd)
     {
     case PDU_CMD_INITIAT:
     {
-        if (!linkup_PlgnNdInit(gParam))
+        KeyValue_Array *Param = oprt_TopoParam(NULL);
+        if (!chk_registered_symbol())
         {
             return PDU_STA_DISCARD;
         }
+        if (!Param || !linkup_PlgnNdInit(Param))
+        {
+            return PDU_STA_DISCARD;
+        }
+
         // linkage_print();
-        print_TopoGraph();
+        // print_TopoGraph();
         return PDU_STA_WORKING;
     }
     case PDU_CMD_STANDBY:
@@ -402,7 +411,7 @@ PDU_STA Main_of_PDU(PDU_CMD cmd)
     case PDU_CMD_VISUAL:
     {
         print_TopoGraph();
-        // fallthru
+        return PDU_STA_TOPOGRAPH;
     }
     case PDU_CMD_WORKON:
     {
