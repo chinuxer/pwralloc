@@ -2,6 +2,7 @@
 #define _EXPORT_DATATYPE_H_
 
 #define RTT_RX_BUFFER_SIZE (256)
+
 typedef enum
 {
     MOD_INIT = 0,   // 模块初始化
@@ -19,6 +20,7 @@ typedef struct
     float max_power;     // 最大输出功率
     float current_power; // 当前输出功率
     float temperature;   // 模块温度
+    uint32_t work_time;  // 工作时长
     ModuleStatus status; // 模块状态
 } PowerSupply;
 
@@ -37,7 +39,7 @@ typedef struct
     float voltage_req;   // 电压需求
     float current_req;   // 电流需求
     float power_req;     // 功率需求
-    uint8_t priority;    // 优先级
+    uint32_t priority;   // 优先级
     PLuginStatus status; // 充电枪状态
 } PowerDemand;
 

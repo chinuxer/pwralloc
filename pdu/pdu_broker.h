@@ -28,16 +28,42 @@ typedef enum
 typedef enum
 {
     CRITERION_NONE = 0,
-    CRITERION_PRIOR,          // 车优先级
-    CRITERION_MIN_COST,       // 经济运行
-    CRITERION_MAX_POWER,      // 最大需求
-    CRITERION_EQU_SANITY,     // 均衡健康度
-    CRITERION_LMT_CAPACITY,   // 单铜排限电流容量
-    CRITERION_MAX_EFFICIENCY, // 模块效率
+    CRITERION_PRIOR = 0b00000001,             // 车优先级
+    CRITERION_MIN_COST = 0b00000010,          // 经济运行
+    CRITERION_MAX_POWER = 0b00000100,         // 最大需求
+    CRITERION_EQU_SANITY = 0b00001000,        // 均衡健康度
+    CRITERION_LMT_CAPACITY = 0b00010000,      // 单铜排限电流容量
+    CRITERION_MAX_EFFICIENCY = 0b00100000,    // 模块效率
+    CRITERION_PRIOR_FAIRNOFAVOR = 0b01000000, // 同优先级内模块均分
+    CRITERION_PRIOR_EARLYPREFER = 0b10000000, // 同优先级内先到先得
 } CRITERION;
-/*******************************************************************************
- * Definitely Needed Macros
- ******************************************************************************/
+typedef enum
+{
+    PRIOR_VAIN = 0, // 没有置优先级=枪没有在工作
+    PRIOR_BASE,     // 会被PRIOR_SVIP褫夺功率配额
+    PRIOR_VIP,      // 不会被PRIOR_SVIP抢褫夺功率配额
+    PRIOR_SVIP,     // 会褫夺PRIOR_BASE的功率配合
+    PRIOR_EXTREME,  // 会褫夺所有非PRIO_EXTREME功率配合
+} PRIOR;
+
+typedef enum
+{
+    PCUDATA_OF_PLUG = 0x00100,
+    PCUDATA_OF_NODE = 0x10000,
+    PCUDATA_OF_NODE_WORKHOURS,
+    PCUDATA_OF_CONTACTORS = 0x1000000,
+
+} PCURawData;
+
+union PCU_RawData
+{
+    int32_t int32_data;
+    float float_data;
+};
+/*
+******************************************************************************
+* Definitely Needed Macros
+******************************************************************************/
 // Declare the related symbols exported from ICF
 extern uint32_t __PDU_CORE_RAM_start__;
 extern uint32_t __PDU_CORE_RAM_end__;
@@ -58,7 +84,11 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 #define FRONT_MAGICWORD 0xDEADCAFE
 #define REAR_MAGICWORD 0xBABEFACE
 
-#define ENDING ((struct Alloc_nodeObj *)(intptr_t)(-1))
+#define VLA_INSTANT(type, name, length) \
+    type name[length];                  \
+    memset(name, 0, sizeof(name));
+
+#define NODE_VAIN ((struct Alloc_nodeObj *)(intptr_t)(-1))
 #define patriptr(PTR, TYPE, MEMBER) ((TYPE *)((char *)PTR - offsetof(TYPE, MEMBER)))
 #define LIST_HEAD_INIT(name) {&(name), &(name)}
 #define LIST_HEAD(name) ListObj name = LIST_HEAD_INIT(name)
@@ -70,27 +100,30 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 #define CONTACTOR_MAX (gpContactorsArray->length)
 #define NODES_PER_POOL (gpNodesArray->forks_num)
 #define CONTACTORS_PER_NODE (gpContactorsArray->forks_num)
+#define CRITERIA (gpPlugsArray->criteria)
 #define POOL_MAX (gpNodesArray->pools_num)
 #define NODE_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE + 1)
 #define POOL_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE / NODES_PER_POOL + 1)
+#define COPPERBAR_OF_CONTACTOR(x) (((x) - 1) / NODES_PER_POOL + 1)
 #define REF(pointer, seq) ((pointer)->obj_array + ((seq) - 1 < pointer->length ? seq - 1 : 0))
 #define NODE_REF(node) (REF(gpNodesArray, node))
 #define PLUG_REF(plug) (REF(gpPlugsArray, plug))
 #define CONTACTOR_REF(knob) (REF(gpContactorsArray, knob))
-#define PLUG_LINKER_REF_INCOGNITA(pointer, plug) ((ListObj *)&REF(pointer, plug)->koinon)
-#define PLUG_LINKER_REF_NONYM(plug) ((ListObj *)&PLUG_REF(plug)->koinon)
+#define COPBAR_REF(bar) (REF(gpCopBarArray, bar))
+#define POOL_REF(pool) (REF(gpPoolArray, pool))
+#define PLUG_LINKER_REF_INCOGNITA(pointer, plug) ((ListObj *)&REF(pointer, plug)->copula)
+#define PLUG_LINKER_REF_NONYM(plug) ((ListObj *)&PLUG_REF(plug)->copula)
 #define CONTACTOR_LINKER_REF_INCOGNITA(pointer, knob) ((ListObj *)REF(pointer, knob))
 #define CONTACTOR_LINKER_REF_NONYM(knob) ((ListObj *)CONTACTOR_REF(knob))
 #define MACRO_PICKOUT(ARG1ST, ARG2ND, PICKED, ...) PICKED
 #define PLUG_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, PLUG_LINKER_REF_INCOGNITA, PLUG_LINKER_REF_NONYM)(__VA_ARGS__)
 #define CONTACTOR_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, CONTACTOR_LINKER_REF_INCOGNITA, CONTACTOR_LINKER_REF_NONYM)(__VA_ARGS__)
-#define PLUG_CHARGER_REF(pointer, plug) (REF(pointer, plug)->next_charger)
-#define NODE_CHARGER_REF(pointer, node) (REF(pointer, node)->next_charger)
+
 #define ID_OF(x) ((x)->id)
 #define NODEREF_FROM_CONTACTOR(knob) (NODE_REF((knob - 1) / CONTACTORS_PER_NODE % NODE_MAX + 1))
 #define POOL_OF_NODE(node) ((ID_OF(NODE_REF(node)) - 1) / NODES_PER_POOL % POOL_MAX + 1)
 #define gear_for_each(pos, head) \
-    for (pos = (head)->next_charger; pos != ENDING; pos = pos->next_charger)
+    for (pos = (head)->next_charger; pos != NODE_VAIN; pos = pos->next_charger)
 #define list_for_each(pos, head) \
     for (pos = (head)->next_linker; pos != (head); pos = pos->next_linker)
 
@@ -107,35 +140,55 @@ extern uint32_t __PDU_CORE_HEAP_size__;
 /*******************************************************************************
  * Data Structures
  ******************************************************************************/
+typedef struct
+{
+    PRIOR priority;
+    float demand;
+    uint32_t workhours_topnode; //
+    uint32_t workhours_bottomnode;
+    uint32_t shortage_demand;
+} STRAGTEGY_BASIS;
 typedef struct Proto_listObj
 {
     uint32_t id;
-    bool is_contactee;
+    bool ia_contacted;
     struct Proto_listObj *next_linker;
     struct Proto_listObj *prev_linker;
 } ListObj, *ListRef;
 
 struct Alloc_nodeObj
 {
-
     uint32_t id;
     float value_Iset;
     float value_Vset;
     uint32_t adaptness;
-    bool energon;
+    PRIOR priority;
+
+    uint32_t chargingplug_Id;
     struct Alloc_nodeObj *next_charger;
     //...
 };
 struct Alloc_plugObj
 {
     uint32_t id;
-    bool energon;
-    float demand;
+    STRAGTEGY_BASIS strategy_info;
     //...
     struct Alloc_nodeObj *next_charger;
-    ListObj koinon;
+    ListObj copula;
+};
+struct Tactic_CopBarObj
+{
+    uint32_t id;
+    float current_max;
+    struct Tactic_CopBarObj *next_bar;
 };
 
+struct Tactic_PwrPoolObj
+{
+    uint32_t id;
+    uint32_t plugs_linked;
+    uint32_t nodes_worked;
+};
 typedef struct
 {
     uint32_t front_canary; // absolutely required to be top element
@@ -157,10 +210,25 @@ typedef struct
 {
     uint32_t front_canary; // absolutely required to be top element
     size_t length;
-    CRITERION criterion;
+    size_t criteria;
     struct Alloc_plugObj obj_array[];
 } Alloc_plugArray;
 
+typedef struct
+{
+    uint32_t front_canary; // absolutely required to be top element
+    size_t length;
+
+    struct Tactic_CopBarObj obj_array[];
+} Tactic_copbarArray;
+
+typedef struct
+{
+    uint32_t front_canary; // absolutely required to be top element
+    size_t length;
+
+    struct Tactic_PwrPoolObj obj_array[];
+} Tactic_pwrpoolArray;
 #define offset_Malloc_Addr (__PDU_CORE_RAM_start__ + sizeof(ptrdiff_t) * 4)
 
 #ifdef __IMPORT_GLOBALVAR__
@@ -172,10 +240,14 @@ typedef struct
 Alloc_nodeArray *gpNodesArray IN_PDU_RAM_SECTION = NULL;
 Alloc_plugArray *gpPlugsArray IN_PDU_RAM_SECTION = NULL;
 Alloc_contactorArray *gpContactorsArray IN_PDU_RAM_SECTION = NULL;
+Tactic_copbarArray *gpCopBarArray IN_PDU_RAM_SECTION = NULL;
+Tactic_pwrpoolArray *gpPoolArray IN_PDU_RAM_SECTION = NULL;
 #else
 extern Alloc_nodeArray *gpNodesArray;
 extern Alloc_plugArray *gpPlugsArray;
 extern Alloc_contactorArray *gpContactorsArray;
+extern Tactic_copbarArray *gpCopBarArray;
+extern Tactic_pwrpoolArray *gpPoolArray;
 #endif // __IMPORT_GLOBALVAR__
 #ifdef __IMPORT_PDU_MALLOC__
 #define CUSTOM_MEM_POOL_SIZE 4 * 1024

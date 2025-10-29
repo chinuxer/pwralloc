@@ -682,7 +682,7 @@
             <data>
                 <extensions></extensions>
                 <cmdline></cmdline>
-                <hasPrio>248</hasPrio>
+                <hasPrio>1</hasPrio>
                 <buildSequence>inputOutputBased</buildSequence>
             </data>
         </settings>
@@ -2183,6 +2183,9 @@
             <data />
         </settings>
     </configuration>
+    <file>
+        <name>$PROJ_DIR$\..\pdu_api.c</name>
+    </file>
     <file>
         <name>$PROJ_DIR$\..\pdu_broker.c</name>
     </file>

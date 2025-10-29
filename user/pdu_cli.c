@@ -157,7 +157,7 @@ PluginCommand parse_command_plugin(const char *cmd)
         return result;
     }
     result.priority = atoi(token);
-    if (result.priority < 0 || result.priority > 3)
+    if (result.priority < PRIOR_VAIN || result.priority > PRIOR_EXTREME)
     {
         return result;
     }

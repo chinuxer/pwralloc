@@ -1,19 +1,18 @@
 #pragma once
 #include "pdu_broker.h"
 #define KEYSTRLEN 20
-typedef struct
-{
-    uint32_t value;
-    char key[KEYSTRLEN];
-} KeyValue_Pair;
 
 typedef struct
 {
     size_t count;
     uint16_t crc;
-    KeyValue_Pair pairs[];
-} KeyValue_Array;
-
+    char text[];
+} Verbose_TextPool;
+typedef struct
+{
+    size_t count;
+    char *var;
+} Verbose;
 typedef union
 {
     uint32_t all;
@@ -24,34 +23,12 @@ typedef union
     } id_of;
 } Combo_Koinon;
 
-#define ADD_KEYVALUE(...)                                             \
-    ({                                                                \
-        struct kv_pair                                                \
-        {                                                             \
-            char *key;                                                \
-            uint32_t val;                                             \
-        } pairs[] = {__VA_ARGS__};                                    \
-        KeyValue_Array *array = NULL;                                 \
-        for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) \
-            array = add_KeyValue(pairs[i].key, pairs[i].val);         \
-        array;                                                        \
-    })
+#define COUNT_ARGS(...) COUNT_ARGS_IMPL(_, ##__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+#define COUNT_ARGS_IMPL(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
+#define EXT_KEYVALUE(str, ...) {#str, COUNT_ARGS(__VA_ARGS__), ##__VA_ARGS__}
+#define COUNT_TYPE_ARGS(type, ...) \
+    (sizeof((type[]){__VA_ARGS__}) / sizeof(type))
 
-#define ADD_INTEGER(...)                                   \
-    ({                                                     \
-        int values[] = {__VA_ARGS__};                      \
-        char names[] = #__VA_ARGS__;                       \
-        KeyValue_Array *array = NULL;                      \
-        size_t count = sizeof(values) / sizeof(values[0]); \
-        char *saveptr = NULL;                              \
-        char *token = strtok_r(names, ", ", &saveptr);     \
-        for (size_t i = 0; i < count && token; i++)        \
-        {                                                  \
-            array = add_KeyValue(token, values[i]);        \
-            token = strtok_r(NULL, ", ", &saveptr);        \
-        }                                                  \
-        array;                                             \
-    })
 #ifdef __INSTANT__PARAM__
 static const uint8_t aucCRCHi[] = {
     0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
@@ -149,75 +126,129 @@ static const uint8_t aucCRCLo[] = {
               ((uint32_t)aucCRCLo[(crc ^ data) & 0xff] << 8); \
     } while (0)
 
-KeyValue_Pair make_keyvalue(const char *key, uint32_t val)
+Verbose_TextPool *oprt_TopoParam(Verbose_TextPool *param)
 {
-    KeyValue_Pair pair;
-    pair.value = val;
-    strncpy(pair.key, key, 20);
-    return pair;
-}
-KeyValue_Array *oprt_TopoParam(KeyValue_Array *param)
-{
-    static KeyValue_Array *gparam = NULL;
+    static Verbose_TextPool *gparam = NULL;
     if (param)
     {
         gparam = param;
     }
     return gparam;
 }
-KeyValue_Array *add_KeyValue(const char *key, uint32_t val)
+
+Verbose_TextPool *literalizing_keyvalue(const char *str, uint16_t members_nbr, ...)
 {
-    static KeyValue_Array *array = NULL;
-    size_t new_count = (array == NULL) ? 1 : array->count + 1;
-    size_t new_size = sizeof(KeyValue_Array) + new_count * sizeof(KeyValue_Pair);
-    // printf("key %s:%d\r\n", key, val);
-    KeyValue_Array *new_array = realloc(array, new_size);
-    if (new_array == NULL)
+    // Parameter validation
+    if (NULL == str || members_nbr < 1)
     {
         return NULL;
     }
-
-    new_array->pairs[new_count - 1] = make_keyvalue(key, val);
-    new_array->count = new_count;
-    array = new_array;
-
-    return oprt_TopoParam(new_array);
+    // Get existing array structure
+    Verbose_TextPool *textpool = oprt_TopoParam(NULL);
+    size_t string_size = strnlen(str, KEYSTRLEN) + sizeof(""); // Include null terminator
+    // Calculate new memory size
+    size_t current_count = (textpool != NULL) ? textpool->count : 0;
+    size_t additional_size = string_size + members_nbr * sizeof(uint16_t);
+    size_t new_count = current_count + additional_size;
+    size_t new_size = sizeof(Verbose_TextPool) + new_count * sizeof(char);
+    // Memory reallocation
+    Verbose_TextPool *new_textpool = realloc(textpool, new_size);
+    if (new_textpool == NULL)
+    {
+        return NULL; // Memory allocation failed
+    }
+    // Copy key string
+    char *dest = new_textpool->text + current_count;
+    strncpy(dest, str, string_size);
+    dest[string_size - 1] = '\0'; // Ensure string termination
+    // Process key value variable arguments
+    va_list args;
+    va_start(args, members_nbr);
+    // Calculate value storage location to avoid re-reading parameters
+    uint16_t *pnum_dest = (uint16_t *)(dest + string_size);
+    for (int cnt = 0; cnt < members_nbr; cnt++)
+    {
+        pnum_dest[cnt] = (uint16_t)va_arg(args, int);
+    }
+    va_end(args);
+    // Update array count and register new array
+    new_textpool->count = new_count;
+    textpool = oprt_TopoParam(new_textpool);
+    return textpool;
 }
 
-uint32_t find_KeyValue(const KeyValue_Array *array, const char *key)
+Verbose find_KeyValue_in_VerboseArray(const Verbose_TextPool *array, const char *key)
 {
     if (!array || !key)
     {
-        return 0;
+        return (Verbose){0, NULL};
     }
-    for (size_t i = 0; i < array->count; i++)
+
+    size_t key_len = strnlen(key, KEYSTRLEN);
+    if (key_len == 0)
     {
-        if (strncmp(array->pairs[i].key, key, KEYSTRLEN) == 0)
-        {
-            return array->pairs[i].value;
-        }
+        return (Verbose){0, NULL};
     }
-    return 0;
+
+    // Search through the text array for the key
+    for (size_t i = 0; i < array->count;)
+    {
+        // Check if there's enough space for the key and at least 2 bytes for the value
+        if (i + key_len + 1 + sizeof(uint16_t) > array->count)
+        {
+            break;
+        }
+
+        // Compare the current string with the key
+        if (strncmp(array->text + i, key, key_len) == 0 &&
+            *(array->text + i + key_len) == '\0')
+        {
+            // Found the key, extract the following 2 bytes as uint16_t
+            uint16_t value = *(uint16_t *)(array->text + i + key_len + 1);
+            return (Verbose){value, (char *)(array->text + i + key_len + 1 + sizeof(uint16_t))};
+        }
+
+        // Move to the next string: skip the string and the 2-byte value
+        // First find the end of the current string
+        size_t str_len = strnlen(array->text + i, array->count - i);
+        i += str_len + 1 + sizeof(uint16_t); // +1 for null terminator, +2 for uint16_t value
+    }
+
+    return (Verbose){0, NULL}; // Key not found
 }
 
-void scan_KeyValue(Combo_Koinon *container, const KeyValue_Array *array, uint32_t plug_id)
+static size_t insert_Joined_Node(Verbose matched_keyvalue, Combo_Koinon *container, uint32_t plug_id)
 {
-  static size_t offset IN_PDU_RAM_SECTION = 0;
+    // Insert the new node into the list
+    size_t index = 0;
+    for (int index = 0; index < matched_keyvalue.count; index++)
+    {
+        (container + index)->id_of.plug = plug_id;
+        (container + index)->id_of.contactor = *(uint16_t *)(matched_keyvalue.var + index * sizeof(uint16_t));
+    }
+    return index;
+}
+void scan_KeyValue_of_PluginJoined(Combo_Koinon *container, size_t container_max, const Verbose_TextPool *array, uint32_t plug_id)
+{
     if (!container || !array || !plug_id)
     {
-      offset=0;
         return;
     }
-    char key[KEYSTRLEN];    
-    snprintf(key, sizeof(key), "u32gun%02d", plug_id);
-    for (size_t i = 0; i < array->count; i++)
+    size_t offset = 0;
+    char key[KEYSTRLEN];
+    for (size_t i = 0; i < POOL_MAX * CONTACTORS_PER_NODE; i++)
     {
-        if (strncmp(array->pairs[i].key, key, KEYSTRLEN) == 0)
+        snprintf(key, sizeof(key), "u32gun%02d", plug_id);
+        size_t key_len = strnlen(key, KEYSTRLEN);
+        const char *ptr = array->text;
+        Verbose match = find_KeyValue_in_VerboseArray(array, key);
+
+        if (offset >= container_max)
         {
-            (container + offset)->id_of.plug = plug_id;
-            (container + offset)->id_of.contactor = array->pairs[i].value;
-            offset++;
+            break;
         }
+
+        offset += insert_Joined_Node(match, container + offset, plug_id);
     }
 
     return;
@@ -227,7 +258,7 @@ void scan_KeyValue(Combo_Koinon *container, const KeyValue_Array *array, uint32_
 
 #define PICKOUT_KEYVALUE(param, token) ({uint32_t val=find_KeyValue(param,token); val; })
 
-bool serialize_Download(KeyValue_Array *param_array)
+bool serialize_Download(Verbose_TextPool *param_array)
 {
 
     if (!param_array)
@@ -235,33 +266,21 @@ bool serialize_Download(KeyValue_Array *param_array)
         return false;
     }
     uint16_t crc = 0xFFFF;
-    for (size_t i = 0; i < param_array->count * sizeof(KeyValue_Pair); i++)
+    for (size_t i = 0; i < param_array->count * sizeof(char); i++)
     {
-        macrocrc16(*((uint8_t *)(param_array->pairs) + i), crc);
+        macrocrc16(*((uint8_t *)(param_array->text) + i), crc);
     }
     param_array->crc = crc;
     printf("Calculated CRC16: 0x%04X\n", crc);
-
+    // Serial.write((uint8_t *)param_array, param_array->count * sizeof(KeyValue_Pair) + sizeof(uint16_t));
     return true;
 }
 
 bool deserialize_Upload(const void *data)
 {
-    return true;
-    /*
-#define PARSE_KEYVALUE_ARRAY(token) uint32_t token = PICKOUT_KEYVALUE(param_ref, #token)
-    KeyValue_Array *param_ref = (KeyValue_Array *)data;
-    if (!param_ref)
-    {
-        return false;
-    }
-    PARSE_KEYVALUE_ARRAY(se01);
-
-    return true;
-*/
 }
 #else
-bool serialize_Download(KeyValue_Array *param_array);
+bool serialize_Download(Verbose_TextPool *param_array);
 bool deserialize_Upload(const void *data);
-KeyValue_Array *add_KeyValue(const char *key, uint32_t val);
+Verbose_TextPool *literalizing_keyvalue(const char *str, uint16_t members_nbr, ...);
 #endif

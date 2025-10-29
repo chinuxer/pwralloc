@@ -15,14 +15,18 @@
 #include "stm32f4xx.h"
 #include "SEGGER_RTT.h"
 
+#define UPPER_LIMIT_OF_PLUGS 24
+#define UPPER_LIMIT_OF_NODES 24
+#define UPPER_LIMIT_OF_CONTACTORS 144
 void print_oneliner(const char *format, ...);
 #ifdef __DATABASE_IMPORT__
-PowerDemand PwrDemandObj[24] = {0};
-PowerSupply PwrSupplyObj[24] = {0};
-Contactor ContactorObj[144] = {0};
+
+PowerDemand PwrDemandObj[UPPER_LIMIT_OF_PLUGS] = {0};
+PowerSupply PwrSupplyObj[UPPER_LIMIT_OF_NODES] = {0};
+Contactor ContactorObj[UPPER_LIMIT_OF_CONTACTORS] = {0};
 #else
-extern PowerDemand PwrDemandObj[24];
-extern PowerSupply PwrSupplyObj[24];
-extern Contactor ContactorObj[144];
+extern PowerDemand PwrDemandObj[UPPER_LIMIT_OF_PLUGS];
+extern PowerSupply PwrSupplyObj[UPPER_LIMIT_OF_NODES];
+extern Contactor ContactorObj[UPPER_LIMIT_OF_CONTACTORS];
 #endif
 #endif

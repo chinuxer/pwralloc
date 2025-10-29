@@ -1,5 +1,6 @@
 #include "pdu_param.h"
 #include "interware.h"
+#include <stdlib.h>
 #define __DATABASE_IMPORT__
 #include "pdu_main.h"
 
@@ -52,7 +53,7 @@ PowerSupply *get_PwrnodeInfo_ExportPDU(uint8_t node_id)
 
 void set_Pwrnode_Output(uint8_t contactor_id, float voltage, float current)
 {
-    print_oneliner("[PCU] set_Pwrnode_Output: contactor_id=%d, voltage=%f, current=%f", contactor_id, voltage, current);
+    // print_oneliner("[PCU] set_Pwrnode_Output: contactor_id=%d, voltage=%f, current=%f", contactor_id, voltage, current);
 }
 void trace_Alarm(uint8_t node_id, uint8_t alarm_level, uint8_t alarm_status)
 {
@@ -76,9 +77,47 @@ void set_Cmd_of_PDU(PDU_CMD cmd)
 {
     gPDU_Command = cmd;
 }
-void rtt_cli_task(void);
-int main(void)
+
+void pseudata_init(void)
 {
+    // 虚拟数据初始化
+    for (int i = 0; i < UPPER_LIMIT_OF_NODES; i++)
+    {
+        PwrSupplyObj[i] = (PowerSupply){
+            .pwrnode_id = (uint8_t)(i + 1),
+            .max_voltage = 450.0f,
+            .max_current = 100.0f,
+            .max_power = 40.0f,
+            .current_power = 0.0f,
+            .temperature = 25.0f + rand() % 100 / 10.0f,
+            .work_time = (rand() % 10000) + 1,
+            .status = MOD_INIT,
+        };
+    }
+    for (int i = 0; i < UPPER_LIMIT_OF_PLUGS; i++)
+    {
+        PwrDemandObj[i] = (PowerDemand){
+            .plugin_id = (uint8_t)(i + 1),
+            .voltage_req = 0.0f,
+            .current_req = 0.0f,
+            .power_req = 0.0f,
+            .priority = 0,
+            .status = PLUGIN_UNPLUGGED,
+        };
+    }
+    for (int i = 0; i < UPPER_LIMIT_OF_CONTACTORS; i++)
+    {
+        ContactorObj[i] = (Contactor){
+            .contactor_id = (uint8_t)(i + 1),
+            .onoff = false,
+        };
+    }
+}
+
+void rtt_cli_task(void);
+  int main(void)
+{
+    pseudata_init();
     register_to_pdu();
     rtt_init();
     pseudotopos();
