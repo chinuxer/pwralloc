@@ -2,16 +2,39 @@
 #include "pdu_broker.h"
 #include "pdu_ex_datatype.h"
 #define PRELITTER "pdu >:"
-
+#define GET_POS -1, -1
+#define RIGHTSHIFT(x) (x + (int)strlen("┃┃") + 2)
 typedef enum
 {
     CURSOR_INC = 1,
     CURSOR_FIX,
     CURSOR_CLR
 } CURSOR_OPRT;
+
+typedef struct
+{
+    int32_t x;
+    int32_t y;
+
+} ULTIMUM_POS;
+
+static ULTIMUM_POS opt_ultimum_demonzone(int32_t x, int32_t y)
+{
+    static ULTIMUM_POS ultimum_pos IN_PDU_RAM_SECTION = {0};
+    if (-1 == x && -1 == y)
+    {
+        return ultimum_pos;
+    }
+
+    ultimum_pos.x = x > 0 ? x : ultimum_pos.x;
+    ultimum_pos.y = y > 0 ? y : ultimum_pos.y;
+    return ultimum_pos;
+}
+
+#define BEGINROW_PRINTLOG 6
 static int fetch_current_cursor_raw(CURSOR_OPRT oprt)
 {
-#define MAX_LINE 20
+    int max_line = opt_ultimum_demonzone(GET_POS).y - BEGINROW_PRINTLOG;
     static int current_line IN_PDU_RAM_SECTION = 0;
     if (CURSOR_CLR == oprt)
     {
@@ -24,7 +47,7 @@ static int fetch_current_cursor_raw(CURSOR_OPRT oprt)
     }
     else if (CURSOR_INC == oprt)
     {
-        current_line = (current_line + 1) % MAX_LINE;
+        current_line = (current_line + 1) % max_line;
         return current_line;
     }
     else
@@ -52,27 +75,43 @@ MATCHURE gear_remove(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target);
 
 void print_oneliner(const char *format, ...)
 {
-
+    static int line_lasttime IN_PDU_RAM_SECTION = 0;
     int current_line = fetch_current_cursor_raw(CURSOR_INC);
+    if (current_line != line_lasttime)
+    {
+        if (current_line < line_lasttime)
+        {
+            int colmax = opt_ultimum_demonzone(GET_POS).x;
+            printf("\033[%d;%dH", BEGINROW_PRINTLOG, RIGHTSHIFT(colmax));
+            for (int i = 5 + current_line; i <= opt_ultimum_demonzone(GET_POS).y; i++)
+            {
+                printf("\033[K");
+                printf("\033[1B");
+            }
+        }
+        line_lasttime = current_line;
+    }
     // Handle variadic arguments like printf
     printf("\033[u");
     printf("\033[%dB", current_line);
-    printf("\033[J");
+    // printf("\033[J");
 
     // Print the prompt
     printf(PRELITTER);
 
     // Handle variadic arguments and print the message
-    va_list args;
-    va_start(args, format);
-    vprintf(format, args);
-    va_end(args);
-    printf("\033[K");
     if (format != NULL && strlen(format) > 0)
     {
-        current_line = fetch_current_cursor_raw(CURSOR_INC);
-        printf("\033[1E");
-        printf(PRELITTER);
+        va_list args;
+        va_start(args, format);
+        vprintf(format, args);
+        va_end(args);
+        printf("\033[K");
+
+        // current_line = fetch_current_cursor_raw(CURSOR_INC);
+        // printf("\033[1E");
+        // printf("\033[%dC", RIGHTSHIFT(colmax));
+        // printf(PRELITTER);
     }
 }
 void linkage_print(void)
@@ -174,7 +213,9 @@ void linkage_print(void)
 #define COLPOS_OF_LEFTFRAME 15
 #define WIDTH_OF_CHARGEE 11
 #define HEIGHT_OF_LOGO 10
-#define HEIGHT_OF_TOPFRAME (HEIGHT_OF_LOGO + 4)
+#define LEFT_MARGIN_BASE 28
+#define TOP_MARGIN_BASE 2
+#define HEIGHT_OF_TOPFRAME (HEIGHT_OF_LOGO + TOP_MARGIN_BASE * 2)
 struct Alloc_plugObj *get_header_plug(uint32_t contactor_id);
 static void draw_logo()
 {
@@ -227,7 +268,7 @@ static inline void recover_pos(void)
 {
     printf("\033[u");
     printf("\033[%dB", fetch_current_cursor_raw(CURSOR_FIX));
-    printf("\033[%dC", strnlen(PRELITTER, 6));
+    printf("\033[%dC", (int)strlen(PRELITTER));
 }
 void draw_pwrnode(int node, bool post_scrip)
 {
@@ -267,7 +308,14 @@ void draw_plug(int plug, bool post_scrip)
     id = header ? ID_OF(header) : 99;
     if (PRIOR_VAIN != PLUG_REF(id)->strategy_info.priority)
     {
-        printf("%s%01d%s PLUG#%02d  %s", BLACK_ON_WHITE, PLUG_REF(id)->strategy_info.priority, BLACK_ON_YELLOW, id, COLOR_RESET);
+        if (NODE_VAIN == PLUG_REF(id)->next_charger)
+        {
+            printf("%s⏳%sPLUG#%02d  %s", BLACK_ON_WHITE, BLACK_ON_YELLOW, id, COLOR_RESET);
+        }
+        else
+        {
+            printf("%s%01d%s PLUG#%02d  %s", BLACK_ON_WHITE, PLUG_REF(id)->strategy_info.priority, BLACK_ON_YELLOW, id, COLOR_RESET);
+        }
     }
     else
     {
@@ -327,13 +375,29 @@ void print_TopoGraph()
     {
         draw_contactor(contactor, false);
     }
+    opt_ultimum_demonzone(LEFT_MARGIN_BASE + COLPOS_OF_LEFTFRAME * CONTACTORS_PER_NODE, HEIGHT_OF_LOGO + (CONTACTORS_PER_NODE * 2 + 6) * POOL_MAX);
     sleep(250);
-    printf("\r\n\r\n\r\n\r\n");
+    int linemax = opt_ultimum_demonzone(GET_POS).y;
+    int colmax = opt_ultimum_demonzone(GET_POS).x;
+    printf("\033[H");
+    printf("\033[%dC", colmax);
+    printf("\033[%dB", TOP_MARGIN_BASE);
+    for (int i = TOP_MARGIN_BASE; i < linemax; i++)
+    {
+        printf("┃┃");
+        printf("\033[1B");
+        printf("\033[2D");
+    }
+    printf("\033[H");
+    printf("\033[%dC", RIGHTSHIFT(colmax));
+    printf("\033[%dB", TOP_MARGIN_BASE);
     printf(COLOR_YELLOW);
-    printf("支持命令格式: in(#{充电桩序号},{电流}A,{优先级})   | 示例: in(#1,250A,2)    //插入充电枪头\r\n");
-    printf("              ex(#{充电桩序号})                    | 示例: ex(#2)           //拔出充电枪头\r\n\r\n");
+    printf("Usage: in(#{plug id},{required current}A,{priority})   | Such as: in(#1,250A,2)    //No.2 charger plug in as VIP,250A needed \r\n");
+    printf("\033[%dC", RIGHTSHIFT(colmax));
+    printf("       ex(#{plug id})                                  | Such as: ex(#2)           //No.2 charger plug out\r\n\r\n");
+    printf("\033[%dC", RIGHTSHIFT(colmax));
     printf(COLOR_RESET);
     printf("\033[s");
-    printf(PRELITTER);
-    printf("\033[?25l");
+    // printf(PRELITTER);
+    //  printf("\033[?25l");
 }

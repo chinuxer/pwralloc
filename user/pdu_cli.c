@@ -214,6 +214,7 @@ void rtt_cli_task(void)
     {
         // 处理换行符，表示命令输入结束
         if (c == '\r' || c == '\n')
+
         {
             /* 确保只在遇到第一个换行符时处理命令，避免\r\n序列导致重复处理 */
             if (!cmd_processed && rx_index > 0)
@@ -246,15 +247,17 @@ void rtt_cli_task(void)
                 {
                     PluginCommand cmd = parsefunc(rtt_rx_buffer);
                     handle_command(&cmd);
-                    if (!cmd_processed)
-                    {
-                        print_oneliner("");
-                    } // 打印新提示符，理论上这里只会在处理完命令后打印一次
+
                     cmd_processed = true; // 标记命令已处理
                 }
             }
 
             // 无论是否处理了命令，遇到换行符都重置缓冲区和索引，准备接收新命令
+            // if (!cmd_processed)
+            if (c == '\n' && 1 >= rx_index)
+            {
+                print_oneliner(NULL);
+            }
             rx_index = 0;
             memset(rtt_rx_buffer, 0, RTT_RX_BUFFER_SIZE);
         }

@@ -170,6 +170,19 @@ MATCHURE gear_remove(struct Alloc_plugObj *plug, struct Alloc_nodeObj *target)
     return FUTILE;
 }
 
+ListObj *get_Cross_BtwnPlugNode(uint32_t node_id, uint32_t plug_id)
+{
+    struct Alloc_plugObj *plug = PLUG_REF(plug_id);
+    struct Alloc_nodeObj *node = NODE_REF(node_id);
+    ListObj *pos;
+    list_for_each(pos, &plug->copula)
+    {
+        if (NODEREF_FROM_CONTACTOR(ID_OF(pos)) == node)
+        {
+            return (pos);
+        }
+    }
+}
 struct Alloc_plugObj *get_header_plug(uint32_t contactor_id)
 {
     if (contactor_id < 1 || contactor_id > CONTACTOR_MAX)
