@@ -624,9 +624,9 @@ void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
             .plug_id = ID_OF(chargee)};
     }
 
-    OPTIMAL *optimum = find_highest_score(candidates, resources, 0);
+    OPTIMAL *optimum = find_highest_score(candidates, resources, -1);
     score_print(optimum, candidates, resources);
-    if (NULL == optimum)
+    if (NULL == optimum || 0 == optimum->node_id)
     {
         return;
     }
@@ -679,9 +679,7 @@ void meet_Remand_Shortage(struct Alloc_plugObj *chargee)
                     .score = GRADING_BY(other_chargee->strategy_info.shortage_demand, other_chargee->strategy_info.priority)};
             }
             else
-            {
-                (candidates + (ID_OF(other_chargee) - 1) % CONTACTORS_PER_NODE)->score = -1;
-
+            {               
                 *(candidates + (id - leftmost_id) % CONTACTORS_PER_NODE) = (OPTIMAL){
                     .contactor_id = 0,
                     .node_id = NODE_OF_CONTACTOR(id),
@@ -695,7 +693,7 @@ void meet_Remand_Shortage(struct Alloc_plugObj *chargee)
         }
         OPTIMAL *optimum = find_highest_score(candidates, CONTACTORS_PER_NODE, 0);
         score_print(optimum, candidates, CONTACTORS_PER_NODE);
-        if (NULL == optimum)
+        if (NULL == optimum || 0 == optimum->node_id)
         {
             continue;
         }
