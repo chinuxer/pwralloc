@@ -28,14 +28,15 @@ typedef enum
 typedef enum
 {
     CRITERION_NONE = 0,
-    CRITERION_PRIOR = 0b00000001,             // 车优先级
-    CRITERION_MIN_COST = 0b00000010,          // 经济运行
-    CRITERION_MAX_POWER = 0b00000100,         // 最大需求
-    CRITERION_EQU_SANITY = 0b00001000,        // 均衡健康度
-    CRITERION_LMT_CAPACITY = 0b00010000,      // 单铜排限电流容量
-    CRITERION_MAX_EFFICIENCY = 0b00100000,    // 模块效率
-    CRITERION_PRIOR_FAIRNOFAVOR = 0b01000000, // 同优先级内模块均分
-    CRITERION_PRIOR_EARLYPREFER = 0b10000000, // 同优先级内先到先得
+    CRITERION_PRIOR = 0b00000001,              // 车优先级
+    CRITERION_MIN_COST = 0b00000010,           // 经济运行
+    CRITERION_MAX_POWER = 0b00000100,          // 最大需求
+    CRITERION_EQU_SANITY = 0b00001000,         // 均衡健康度
+    CRITERION_LMT_CAPACITY = 0b00010000,       // 单铜排限电流容量
+    CRITERION_MAX_EFFICIENCY = 0b00100000,     // 模块效率
+    CRITERION_PEERS_FAIRNOFAVOR = 0b01000000,  // 同优先级内模块均分
+    CRITERION_PEERS_EARLYPREFER = 0b10000000,  // 同优先级内先到先得
+    CRITERION_ALLOWANCE_MINIMUM = 0b100000000, // 插枪后必须获取最低节点供应
 } CRITERION;
 typedef enum
 {
@@ -65,12 +66,12 @@ union PCU_RawData
 * Definitely Needed Macros
 ******************************************************************************/
 // Declare the related symbols exported from ICF
-extern uint32_t __PDU_CORE_RAM_start__;
-extern uint32_t __PDU_CORE_RAM_end__;
-extern uint32_t __PDU_CORE_RAM_size__;
-extern uint32_t __PDU_CORE_HEAP_start__;
-extern uint32_t __PDU_CORE_HEAP_end__;
-extern uint32_t __PDU_CORE_HEAP_size__;
+extern const unsigned char *const __PDU_CORE_RAM_start__;
+extern const unsigned char *const __PDU_CORE_RAM_end__;
+extern const unsigned char *const __PDU_CORE_HEAP_start__;
+extern const unsigned char *const __PDU_CORE_HEAP_end__;
+extern const unsigned int __PDU_CORE_RAM_size__;
+extern const unsigned int __PDU_CORE_HEAP_size__;
 
 #define CYPHER (__COUNTER__)
 #define NODEARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 1)
@@ -147,7 +148,6 @@ typedef struct
     uint32_t workhours_topnode; //
     uint32_t workhours_bottomnode;
     uint32_t shortage_demand;
-
 } STRAGTEGY_BASIS;
 typedef struct Proto_listObj
 {
@@ -250,8 +250,8 @@ extern Tactic_copbarArray *gpCopBarArray;
 extern Tactic_pwrpoolArray *gpPoolArray;
 #endif // __IMPORT_GLOBALVAR__
 #ifdef __IMPORT_PDU_MALLOC__
-#define CUSTOM_MEM_POOL_SIZE 4 * 1024
-static uint8_t custom_mem_pool[CUSTOM_MEM_POOL_SIZE] IN_PDU_HEAP_SECTION = {0};
+
+static uint8_t custom_mem_pool[CUSTOM_HEAP_SIZE] IN_PDU_HEAP_SECTION = {0};
 void *pdu_calloc(size_t size)
 {
     static size_t custom_mem_offset IN_PDU_RAM_SECTION = 0;
@@ -263,7 +263,7 @@ void *pdu_calloc(size_t size)
 
     size = (size + 3) & ~3; // allign
 
-    if (custom_mem_offset + size > CUSTOM_MEM_POOL_SIZE)
+    if (custom_mem_offset + size > __PDU_CORE_HEAP_size__)
     {
         return NULL;
     }

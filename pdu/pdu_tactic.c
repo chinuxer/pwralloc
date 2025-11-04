@@ -531,7 +531,7 @@ static void ordering_Procedure(const OPTIMAL *optimum)
     POOL_REF(POOL_OF_NODE(optimum->node_id))->plugs_linked = count_Charging_Plug(POOL_OF_NODE(optimum->node_id));
 }
 
-void handle_Demands_From_Charger(struct Alloc_plugObj *chargee, int quota, int *pshortage)
+void handle_Demands_From_Charger(struct Alloc_plugObj *chargee, int *pshortage)
 {
     uint32_t credits = list_len_safe(&chargee->copula, NODE_MAX);
     if (0 == credits)
@@ -569,14 +569,48 @@ void handle_Demands_From_Charger(struct Alloc_plugObj *chargee, int quota, int *
 
     ordering_Procedure(optimum);
 }
-void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
+
+static void handle_Lowest_Node_Holdsome(struct Alloc_plugObj *chargee, int *pshortage)
 {
-#define GRADING_BY(shortage, possess) ((int)(99 - shortage % 100 + 100 * possess))
-    if (!chargee)
+#define GRADING_BY(shortage, prior, possess) ((int)(POSTPRIMA_WEIGHT1 - 1 - shortage % POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT1 * (PRIOR_EXTREME - prior) + POSTPRIMA_WEIGHT2 * possess))
+    if (!chargee || !PRIORITY_ASSERT(CRITERION_ALLOWANCE_MINIMUM))
     {
         return;
     }
-    if (!PRIORITY_ASSERT(CRITERION_PRIOR_FAIRNOFAVOR))
+    uint32_t resources = list_len_safe(&chargee->copula, NODE_MAX);
+    VLA_INSTANT(OPTIMAL, candidates, resources);
+    ListObj *pos;
+    int cnt = 0;
+    list_for_each(pos, &chargee->copula)
+    {
+        uint32_t plug_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id;
+        if (plug_id == 0)
+        {
+            continue;
+        }
+
+        struct Alloc_plugObj *plug_released = PLUG_REF(plug_id);
+        candidates[cnt++ % resources] = (OPTIMAL){
+            .plug_id = ID_OF(chargee),
+            .node_id = NODE_OF_CONTACTOR(ID_OF(pos)),
+            .contactor_id = ID_OF(pos),
+            .score = GRADING_BY(plug_released->strategy_info.shortage_demand, NODE_REF(ID_OF(pos))->priority, gear_num(plug_released))};
+    }
+
+    OPTIMAL *optimum = find_highest_score(candidates, resources, POSTPRIMA_WEIGHT2 * MINIMUM_QUOTA);
+    score_print(optimum, candidates, resources);
+    if (NULL == optimum || 0 == optimum->node_id)
+    {
+        return;
+    }
+    *pshortage = ((*pshortage - 1) < 0 ? 0 : *pshortage - 1);
+    ordering_Procedure(optimum);
+#undef GRADING_BY
+}
+void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
+{
+#define GRADING_BY(shortage, possess, sharable) ((int)(POSTPRIMA_WEIGHT1 - 1 - shortage % POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT1 * possess + POSTPRIMA_WEIGHT2 * (sharable)))
+    if (!chargee || !PRIORITY_ASSERT(CRITERION_PEERS_FAIRNOFAVOR))
     {
         return;
     }
@@ -608,23 +642,14 @@ void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
         PRIOR req_priority = chargee->strategy_info.priority;
         PRIOR target_priority = NODEREF_FROM_CONTACTOR(ID_OF(pos))->priority;
 
-        if (!shareable_By_Priority(req_priority, target_priority))
-        {
-            continue;
-        }
-
-        if (gear_num(plug_released) <= floor_supply)
-        {
-            continue;
-        }
         candidates[cnt++ % resources] = (OPTIMAL){
             .contactor_id = ID_OF(pos),
             .node_id = NODE_OF_CONTACTOR(ID_OF(pos)),
-            .score = GRADING_BY(plug_released->strategy_info.shortage_demand, gear_num(plug_released)),
+            .score = GRADING_BY(plug_released->strategy_info.shortage_demand, gear_num(plug_released), shareable_By_Priority(req_priority, target_priority)),
             .plug_id = ID_OF(chargee)};
     }
 
-    OPTIMAL *optimum = find_highest_score(candidates, resources, -1);
+    OPTIMAL *optimum = find_highest_score(candidates, resources, (floor_supply + 1) * POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT2);
     score_print(optimum, candidates, resources);
     if (NULL == optimum || 0 == optimum->node_id)
     {
@@ -636,7 +661,7 @@ void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
 }
 void meet_Remand_Shortage(struct Alloc_plugObj *chargee)
 {
-#define GRADING_BY(demand, priority) ((int)(demand + 100 * priority))
+#define GRADING_BY(demand, priority) ((int)(demand + POSTPRIMA_WEIGHT1 * priority))
 
     if (!chargee)
     {
@@ -679,7 +704,7 @@ void meet_Remand_Shortage(struct Alloc_plugObj *chargee)
                     .score = GRADING_BY(other_chargee->strategy_info.shortage_demand, other_chargee->strategy_info.priority)};
             }
             else
-            {               
+            {
                 *(candidates + (id - leftmost_id) % CONTACTORS_PER_NODE) = (OPTIMAL){
                     .contactor_id = 0,
                     .node_id = NODE_OF_CONTACTOR(id),
@@ -754,11 +779,15 @@ void allocating_Dealer(struct Alloc_plugObj *chargee, int quota)
     int shortage = quota;
     for (int i = 0; i < quota; i++)
     {
-        handle_Demands_From_Charger(chargee, quota, &shortage);
+        handle_Demands_From_Charger(chargee, &shortage);
     }
     for (int j = 0; j < shortage; j++)
     {
         handle_Shortage_From_Peers(chargee, &shortage);
+    }
+    if (0 < shortage)
+    {
+        handle_Lowest_Node_Holdsome(chargee, &shortage);
     }
 
     chargee->strategy_info.shortage_demand = shortage;

@@ -227,8 +227,7 @@
                 <debug>1</debug>
                 <option>
                     <name>CCDefines</name>
-                    <state>STM32F40_41xxx 
-</state>
+                    <state>STM32F40_41xxx</state>
                 </option>
                 <option>
                     <name>CCPreprocFile</name>
@@ -737,7 +736,8 @@
                 </option>
                 <option>
                     <name>IlinkConfigDefines</name>
-                    <state></state>
+                    <state>CUSTOM_HEAP_SIZE=0x00001800
+</state>
                 </option>
                 <option>
                     <name>IlinkMapFile</name>

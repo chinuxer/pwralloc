@@ -174,7 +174,7 @@ ListObj *get_Cross_BtwnPlugNode(uint32_t node_id, uint32_t plug_id)
 {
     struct Alloc_plugObj *plug = PLUG_REF(plug_id);
     struct Alloc_nodeObj *node = NODE_REF(node_id);
-    ListObj *pos;
+    ListObj *pos = NULL;
     list_for_each(pos, &plug->copula)
     {
         if (NODEREF_FROM_CONTACTOR(ID_OF(pos)) == node)
@@ -182,6 +182,7 @@ ListObj *get_Cross_BtwnPlugNode(uint32_t node_id, uint32_t plug_id)
             return (pos);
         }
     }
+    return NULL;
 }
 struct Alloc_plugObj *get_header_plug(uint32_t contactor_id)
 {
@@ -236,7 +237,7 @@ void Alloc_plugArray_Init(void *const ptr, size_t n)
     Alloc_plugArray *p = (Alloc_plugArray *)ptr;
     p->length = n;
     p->front_canary = FRONT_MAGICWORD;
-    p->criteria = CRITERION_EQU_SANITY | CRITERION_LMT_CAPACITY | CRITERION_PRIOR | CRITERION_PRIOR_FAIRNOFAVOR;
+    p->criteria = CRITERION_EQU_SANITY | CRITERION_LMT_CAPACITY | CRITERION_PRIOR | CRITERION_PEERS_FAIRNOFAVOR | CRITERION_ALLOWANCE_MINIMUM;
     *GET_REAR_CANARY_PTR(p, Alloc_plugArray) = REAR_MAGICWORD;
     for (int i = 1; i <= p->length; i++)
     {
@@ -272,7 +273,7 @@ void Tactic_copbarArray_Init(void *const ptr, size_t n)
     Tactic_copbarArray *p = (Tactic_copbarArray *)ptr;
     p->length = n;
     p->front_canary = FRONT_MAGICWORD;
-    *GET_REAR_CANARY_PTR(p, Alloc_contactorArray) = REAR_MAGICWORD;
+    *GET_REAR_CANARY_PTR(p, Tactic_copbarArray) = REAR_MAGICWORD;
     for (int i = 1; i <= p->length; i++)
     {
         ID_OF(REF(p, i)) = i;
@@ -287,7 +288,7 @@ void Tactic_pwrpoolArray_Init(void *const ptr, size_t n)
     Tactic_pwrpoolArray *p = (Tactic_pwrpoolArray *)ptr;
     p->length = n;
     p->front_canary = FRONT_MAGICWORD;
-    *GET_REAR_CANARY_PTR(p, Alloc_contactorArray) = REAR_MAGICWORD;
+    *GET_REAR_CANARY_PTR(p, Tactic_pwrpoolArray) = REAR_MAGICWORD;
     for (int i = 1; i <= p->length; i++)
     {
         ID_OF(REF(p, i)) = i;
@@ -392,16 +393,7 @@ bool linkup_PlgnNdInit(KeyValue_Array *param_ref)
         return false;
     }
     gpContactorsArray = CREATE_FLEXSTRUCT_ARRAY(Alloc_contactorArray, u32pwrcontactors_max);
-    if (!gpNodesArray || !gpPlugsArray || !gpContactorsArray)
-    {
-        printf("!!!flexible array mem allocation failed.\n");
-        return false;
-    }
-    if (u32pwrcontactors_max % u32pwrnodes_max != 0)
-    {
-        printf("!!!contactors is not a multiple of nodes.\n");
-        return false;
-    }
+
     PARSE_KEYVALUE_ARRAY(u32pool_max);
     if (!u32pool_max)
     {
@@ -412,6 +404,16 @@ bool linkup_PlgnNdInit(KeyValue_Array *param_ref)
     NODES_PER_POOL = u32pwrcontactors_max / CONTACTORS_PER_NODE / POOL_MAX;
     gpCopBarArray = CREATE_FLEXSTRUCT_ARRAY(Tactic_copbarArray, POOL_MAX * CONTACTORS_PER_NODE);
     gpPoolArray = CREATE_FLEXSTRUCT_ARRAY(Tactic_pwrpoolArray, POOL_MAX);
+    if (!gpNodesArray || !gpPlugsArray || !gpContactorsArray || !gpCopBarArray || !gpPoolArray)
+    {
+        printf("!!!flexible array mem allocation failed.\n");
+        return false;
+    }
+    if (u32pwrcontactors_max % u32pwrnodes_max != 0)
+    {
+        printf("!!!contactors is not a multiple of nodes.\n");
+        return false;
+    }
     VLA_INSTANT(Combo_Koinon, koinon_array, POOL_MAX * CONTACTORS_PER_NODE); // in case of VLA enabled in IAR within C99 standard
     scan_KeyValue(NULL, NULL, 0);
     find_plug_join(param_ref, u32pwrguns_max, koinon_array);
@@ -451,6 +453,28 @@ bool hear_Canaries_Twittering(void)
     if (!IS_REAR_CANARY_INTACT(gpContactorsArray, Alloc_contactorArray))
     {
         printf("gpContactorsArray Rear canary corrupted!\r\n");
+        return false;
+    }
+    if (!IS_FRONT_CANARY_INTACT(gpCopBarArray, Tactic_copbarArray))
+    {
+
+        printf("gpCopBarArray Front canary corrupted!\r\n");
+        return false;
+    }
+    if (!IS_REAR_CANARY_INTACT(gpCopBarArray, Tactic_copbarArray))
+    {
+        printf("gpCopBarArray Rear canary corrupted!\r\n");
+        return false;
+    }
+    if (!IS_FRONT_CANARY_INTACT(gpPoolArray, Tactic_pwrpoolArray))
+    {
+
+        printf("gpPoolArray Front canary corrupted!\r\n");
+        return false;
+    }
+    if (!IS_REAR_CANARY_INTACT(gpPoolArray, Tactic_pwrpoolArray))
+    {
+        printf("gpPoolArray Rear canary corrupted!\r\n");
         return false;
     }
     return true;
