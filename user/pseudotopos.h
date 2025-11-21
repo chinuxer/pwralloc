@@ -1,7 +1,7 @@
-param_ref = ADD_KEYVALUE({"u32gun01", 1}, {"u32gun01", 37}, {"u32gun01", 73}, {"u32gun02", 2}, {"u32gun03", 3}, {"u32gun04", 4});
-param_ref = ADD_KEYVALUE({"u32gun05", 5}, {"u32gun06", 6}, {"u32gun07", 38}, {"u32gun08", 39}, {"u32gun09", 40}, {"u32gun10", 41});
-param_ref = ADD_KEYVALUE({"u32gun11", 42}, {"u32gun12", 74}, {"u32gun12", 110}, {"u32gun13", 75}, {"u32gun14", 76}, {"u32gun15", 77});
-param_ref = ADD_KEYVALUE({"u32gun16", 78}, {"u32gun17", 109}, {"u32gun18", 111}, {"u32gun19", 112}, {"u32gun20", 113}, {"u32gun21", 114});
+param_ref = ADD_KEYVALUE({"u32gun01", 25}, {"u32gun01", 61}, {"u32gun01", 97}, {"u32gun02", 26}, {"u32gun03", 27}, {"u32gun04", 28});
+param_ref = ADD_KEYVALUE({"u32gun05", 29}, {"u32gun06", 30}, {"u32gun07", 62}, {"u32gun08", 63}, {"u32gun09", 64}, {"u32gun10", 65});
+param_ref = ADD_KEYVALUE({"u32gun11", 66}, {"u32gun12", 98}, {"u32gun12", 134}, {"u32gun13", 99}, {"u32gun14", 100}, {"u32gun15", 101});
+param_ref = ADD_KEYVALUE({"u32gun16", 102}, {"u32gun17", 133}, {"u32gun18", 135}, {"u32gun19", 136}, {"u32gun20", 137}, {"u32gun21", 138});
 uint32_t u32pwrnodes_max = 24;
 uint32_t u32pwrcontactors_max = 144;
 uint32_t u32pool_max = 4;

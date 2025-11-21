@@ -1,8 +1,6 @@
 #ifndef _EXPORT_DATATYPE_H_
 #define _EXPORT_DATATYPE_H_
 
-#define RTT_RX_BUFFER_SIZE (256)
-
 typedef enum
 {
     MOD_INIT = 0,   // 模块初始化
@@ -28,17 +26,20 @@ typedef enum
 {
     PLUGIN_UNPLUGGED = 0, // 未插入
     PLUGIN_PLUGGED,       // 已插入未充电
+    PLUGIN_INSULATCHK,    // 绝缘检测中
     PLUGIN_CHARGING,      // 充电中
     PLUGIN_SUSPENDED,     // 充电暂停
-    PLUGIN_FAULT          // 故障
+    PLUGIN_FAULT,          // 故障
+    PLUGIN_UNKNOWN
 } PLuginStatus;
 
 typedef struct
 {
-    uint8_t plugin_id;   // 充电枪标识
-    float voltage_req;   // 电压需求
-    float current_req;   // 电流需求
-    float power_req;     // 功率需求
+    uint8_t plugin_id; // 充电枪标识
+    float voltage_req; // 电压需求
+    float current_req; // 电流需求
+    float power_req;   // 功率需求
+    float max_req;
     uint32_t priority;   // 优先级
     PLuginStatus status; // 充电枪状态
 } PowerDemand;
@@ -48,4 +49,10 @@ typedef struct
     uint8_t contactor_id; // 充电枪标识
     bool onoff;
 } Contactor;
+
+
+
+
+
+
 #endif // !1

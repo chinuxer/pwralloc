@@ -736,7 +736,7 @@
                 </option>
                 <option>
                     <name>IlinkConfigDefines</name>
-                    <state>CUSTOM_HEAP_SIZE=0x00001800
+                    <state>CUSTOM_HEAP_SIZE=0x00001800
 </state>
                 </option>
                 <option>
@@ -2231,6 +2231,6 @@
         </file>
     </group>
     <file>
-        <name>$PROJ_DIR$\..\pdu\libproj\Debug\Exe\PDU_CORE.a</name>
+        <name>$PROJ_DIR$\..\pdu\PDU_CORE.a</name>
     </file>
 </project>

@@ -14,11 +14,13 @@
 #include "pdu_ex_datatype.h"
 #include "stm32f4xx.h"
 #include "SEGGER_RTT.h"
+#include "pdu_core.h"
 
 #define UPPER_LIMIT_OF_PLUGS 24
 #define UPPER_LIMIT_OF_NODES 24
 #define UPPER_LIMIT_OF_CONTACTORS 144
 void print_oneliner(const char *format, ...);
+struct PDU_RET_T FSM_mainEntry_PDU(enum PDU_CMD_T cmd, ...);
 #ifdef __DATABASE_IMPORT__
 
 PowerDemand PwrDemandObj[UPPER_LIMIT_OF_PLUGS] = {0};

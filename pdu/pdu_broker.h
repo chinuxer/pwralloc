@@ -7,12 +7,15 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
+#include <stdalign.h>
 #include <stdarg.h>
 #include <ctype.h>
 #include "inttypes.h"
 #include "math.h"
-
+#include <float.h>
+#include <limits.h>
+#include "pdu_core.h"
+typedef uint32_t ID_TYPE;
 typedef enum
 {
     FUTILE = -1,
@@ -38,29 +41,47 @@ typedef enum
     CRITERION_PEERS_EARLYPREFER = 0b10000000,  // 同优先级内先到先得
     CRITERION_ALLOWANCE_MINIMUM = 0b100000000, // 插枪后必须获取最低节点供应
 } CRITERION;
-typedef enum
-{
-    PRIOR_VAIN = 0, // 没有置优先级=枪没有在工作
-    PRIOR_BASE,     // 会被PRIOR_SVIP褫夺功率配额
-    PRIOR_VIP,      // 不会被PRIOR_SVIP抢褫夺功率配额,会分摊PRIOR_BASE的功率配额
-    PRIOR_SVIP,     // 会褫夺PRIOR_BASE的功率配合
-    PRIOR_EXTREME,  // 会褫夺所有非PRIO_EXTREME功率配合
-} PRIOR;
 
 typedef enum
 {
-    PCUDATA_OF_PLUG = 0x00100,
-    PCUDATA_OF_NODE = 0x10000,
+    PCUDATA_OF_PLUG = 0x00100u,
+    PCUDATA_OF_PLUG_DEMAND_CURRENT,
+    PCUDATA_OF_PLUG_MAXIMUM_CURRENT,
+    PCUDATA_OF_PLUG_STATUS,
+    PCUDATA_OF_PLUG_PRIORITY,
+    PCUDATA_OF_PLUG_VOLTAGE,
+    PCUDATA_OF_NODE = 0x10000u,
     PCUDATA_OF_NODE_WORKHOURS,
-    PCUDATA_OF_CONTACTORS = 0x1000000,
+    PCUDATA_OF_NODE_CURRENT,
+    PCUDATA_OF_CONTACTORS = 0x1000000u,
 
 } PCURawData;
 
 union PCU_RawData
 {
     int32_t int32_data;
+    uint32_t uint32_data;
     float float_data;
 };
+
+typedef enum
+{
+    SET_VERBOSE = 0,
+    SET_TACITMOD,
+    GET_STATUS,
+} VISUAL_PRINT_OPRT;
+
+typedef enum
+{
+    NEITHERFLAG = 0,
+    REALLOCATOR = 0xA0,
+    REALLOCATEE,
+    SUPRASWITCH,
+    UNAVAILABLE = 0xF0,
+    MALFUNCTION,
+    CIRCUMSTANT
+} PLUG_TACTIC_FLAG;
+
 /*
 ******************************************************************************
 * Definitely Needed Macros
@@ -71,23 +92,22 @@ extern const unsigned char *const __PDU_CORE_RAM_end__;
 extern const unsigned char *const __PDU_CORE_HEAP_start__;
 extern const unsigned char *const __PDU_CORE_HEAP_end__;
 extern const unsigned int __PDU_CORE_RAM_size__;
+// cstat !MISRAC2012-Rule-8.9_b
 extern const unsigned int __PDU_CORE_HEAP_size__;
 
 #define CYPHER (__COUNTER__)
-#define NODEARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 1)
-#define CONTACTORARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 2)
-#define PLUGARRAY_ATTRIBUTE (0x2000000 + sizeof(ptrdiff_t) * 3)
 
 #define IN_PDU_RAM_SECTION __attribute__((section(".pdu_ram_section"), aligned(4)))
+#define IN_PCU_RAM_SECTION
 #define IN_PDU_HEAP_SECTION __attribute__((section(".pdu_heap_section")))
 #define RAM_CAPACITY (__PDU_CORE_RAM_size__ / sizeof(ptrdiff_t))
 
-#define FRONT_MAGICWORD 0xDEADCAFE
-#define REAR_MAGICWORD 0xBABEFACE
-
+#define FRONT_MAGICWORD 0xDEADCAFEu
+#define REAR_MAGICWORD 0xBABEFACEu
+// in case of VLA enabled in IAR within C99 standard
 #define VLA_INSTANT(type, name, length) \
-    type name[length];                  \
-    memset(name, 0, sizeof(name));
+    type name[(length)];                \
+    memset(name, 0, sizeof(type) * (length));
 
 #define NODE_VAIN ((struct Alloc_nodeObj *)(intptr_t)(-1))
 #define patriptr(PTR, TYPE, MEMBER) ((TYPE *)((char *)PTR - offsetof(TYPE, MEMBER)))
@@ -103,15 +123,16 @@ extern const unsigned int __PDU_CORE_HEAP_size__;
 #define CONTACTORS_PER_NODE (gpContactorsArray->forks_num)
 #define CRITERIA (gpPlugsArray->criteria)
 #define POOL_MAX (gpNodesArray->pools_num)
-#define NODE_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE + 1)
-#define POOL_OF_CONTACTOR(x) (((x) - 1) / CONTACTORS_PER_NODE / NODES_PER_POOL + 1)
-#define COPPERBAR_OF_CONTACTOR(x) (((x) - 1) / NODES_PER_POOL + 1)
-#define REF(pointer, seq) ((pointer)->obj_array + ((seq) - 1 < pointer->length ? seq - 1 : 0))
+#define NODE_OF_CONTACTOR(x) ((ID_TYPE)(((x) - 1) / CONTACTORS_PER_NODE + 1))
+#define POOL_OF_CONTACTOR(x) ((ID_TYPE)(((x) - 1) / CONTACTORS_PER_NODE / NODES_PER_POOL + 1))
+#define COPPERBAR_OF_CONTACTOR(x) ((ID_TYPE)((POOL_OF_CONTACTOR(x) - 1) * CONTACTORS_PER_NODE + (x) % (CONTACTORS_PER_NODE + 1)))
+#define REF(pointer, seq) ((pointer)->obj_array + ((seq) - 1 < (pointer)->length ? (seq) - 1 : 0))
 #define NODE_REF(node) (REF(gpNodesArray, node))
 #define PLUG_REF(plug) (REF(gpPlugsArray, plug))
 #define CONTACTOR_REF(knob) (REF(gpContactorsArray, knob))
 #define COPBAR_REF(bar) (REF(gpCopBarArray, bar))
 #define POOL_REF(pool) (REF(gpPoolArray, pool))
+#define SETTLER_REF(plug) (REF(gpReqSettlerArray, plug))
 #define PLUG_LINKER_REF_INCOGNITA(pointer, plug) ((ListObj *)&REF(pointer, plug)->copula)
 #define PLUG_LINKER_REF_NONYM(plug) ((ListObj *)&PLUG_REF(plug)->copula)
 #define CONTACTOR_LINKER_REF_INCOGNITA(pointer, knob) ((ListObj *)REF(pointer, knob))
@@ -121,7 +142,7 @@ extern const unsigned int __PDU_CORE_HEAP_size__;
 #define CONTACTOR_LINKER_REF(...) MACRO_PICKOUT(__VA_ARGS__, CONTACTOR_LINKER_REF_INCOGNITA, CONTACTOR_LINKER_REF_NONYM)(__VA_ARGS__)
 
 #define ID_OF(x) ((x)->id)
-#define NODEREF_FROM_CONTACTOR(knob) (NODE_REF((knob - 1) / CONTACTORS_PER_NODE % NODE_MAX + 1))
+#define NODEREF_FROM_CONTACTOR(knob) (NODE_REF(((knob) - 1) / CONTACTORS_PER_NODE % NODE_MAX + 1))
 #define POOL_OF_NODE(node) ((ID_OF(NODE_REF(node)) - 1) / NODES_PER_POOL % POOL_MAX + 1)
 #define gear_for_each(pos, head) \
     for (pos = (head)->next_charger; pos != NODE_VAIN; pos = pos->next_charger)
@@ -138,56 +159,68 @@ extern const unsigned int __PDU_CORE_HEAP_size__;
     for (pos = (head)->next_linker, n = pos->next_linker; pos != (head); \
          pos = n, n = pos->next_linker)
 
+#define CRITERIA_ASSIGNMENT ((size_t)CRITERION_EQU_SANITY | (size_t)CRITERION_PRIOR | (size_t)CRITERION_PEERS_FAIRNOFAVOR | (size_t)CRITERION_ALLOWANCE_MINIMUM)
+#define DEMAND_CURRENT_SAMPLENUM 6
 /*******************************************************************************
  * Data Structures
  ******************************************************************************/
 typedef struct
 {
-    PRIOR priority;
     float demand;
-    uint32_t workhours_topnode; //
+    float longing;
+    float value_Vset;
+    uint32_t workhours_topnode;
     uint32_t workhours_bottomnode;
-    uint32_t shortage_demand;
+    int32_t shortage_demand;
+    uint32_t soc;
+    uint32_t duration;
+    PLUG_TACTIC_FLAG tag_realloc;
+    PRIOR priority;
 } STRAGTEGY_BASIS;
 typedef struct Proto_listObj
 {
-    uint32_t id;
-    bool ia_contacted;
     struct Proto_listObj *next_linker;
     struct Proto_listObj *prev_linker;
+    ID_TYPE id;
+    bool ia_contacted;
+    bool discarded;
 } ListObj, *ListRef;
 
 struct Alloc_nodeObj
 {
-    uint32_t id;
+    struct Alloc_nodeObj *next_charger;
+    ID_TYPE id;
     float value_Iset;
     float value_Vset;
-    PRIOR priority;
-
     uint32_t chargingplug_Id;
-    struct Alloc_nodeObj *next_charger;
-    //...
+    PRIOR priority;
+    bool discarded;
 };
 struct Alloc_plugObj
 {
-    uint32_t id;
-    STRAGTEGY_BASIS strategy_info;
-    //...
     struct Alloc_nodeObj *next_charger;
     ListObj copula;
+    ID_TYPE id;
+    STRAGTEGY_BASIS strategy_info;
 };
 struct Tactic_CopBarObj
 {
-    uint32_t id;
-    float current_max;
-    struct Tactic_CopBarObj *next_bar;
+    ID_TYPE id;
+    const float current_max;
 };
 
 struct Tactic_PwrPoolObj
 {
-    uint32_t id;
-    uint32_t plugs_linked;
+    ID_TYPE id;
     uint32_t nodes_worked;
+};
+
+struct Tactic_ReqCurrentObj
+{
+    uint32_t index;
+    int32_t counter;
+    uint32_t last_stand_value;
+    float sample_current_pool[DEMAND_CURRENT_SAMPLENUM];
 };
 typedef struct
 {
@@ -196,7 +229,7 @@ typedef struct
     size_t pools_num;
     size_t forks_num;
     struct Alloc_nodeObj obj_array[];
-} Alloc_nodeArray;
+} Alloc_NodesArray;
 
 typedef struct
 {
@@ -204,7 +237,7 @@ typedef struct
     size_t length;
     size_t forks_num;
     ListObj obj_array[];
-} Alloc_contactorArray;
+} Alloc_ContactorsArray;
 
 typedef struct
 {
@@ -212,7 +245,7 @@ typedef struct
     size_t length;
     size_t criteria;
     struct Alloc_plugObj obj_array[];
-} Alloc_plugArray;
+} Alloc_PlugsArray;
 
 typedef struct
 {
@@ -220,7 +253,7 @@ typedef struct
     size_t length;
 
     struct Tactic_CopBarObj obj_array[];
-} Tactic_copbarArray;
+} Alloc_CopBarArray;
 
 typedef struct
 {
@@ -228,79 +261,128 @@ typedef struct
     size_t length;
 
     struct Tactic_PwrPoolObj obj_array[];
-} Tactic_pwrpoolArray;
-#define offset_Malloc_Addr (__PDU_CORE_RAM_start__ + sizeof(ptrdiff_t) * 4)
+} Alloc_PoolArray;
 
+typedef struct
+{
+    uint32_t front_canary; // absolutely required to be top element
+    size_t length;
+
+    struct Tactic_ReqCurrentObj obj_array[];
+} Alloc_ReqSettlerArray;
+#define offset_Malloc_Addr(x) (__PDU_CORE_RAM_start__ + sizeof(ptrdiff_t) * (x))
+
+#define VARIABLE_LIST_PENDING_EXPANDED        \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(Nodes);      \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(Plugs);      \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(Contactors); \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(CopBar);     \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(Pool);       \
+    CONTEXT_EXPANDER_PROJ_GLOBAL(ReqSettler);
+// cstat -DEFINE-hash-multiple
+#define VAR_NAME(x) gp##x##Array
+#define VAR_TYPE(x) Alloc_##x##Array
+// cstat +DEFINE-hash-multiple
 #ifdef __IMPORT_GLOBALVAR__
-// refrence to instant of contactor,plugin and pwrnode object
-// Alloc_nodeArray *gpNodesArray @NODEARRAY_ATTRIBUTE = NULL;
-// Alloc_plugArray *gpPlugsArray @PLUGARRAY_ATTRIBUTE = NULL;
-// Alloc_contactorArray *gpContactorsArray @CONTACTORARRAY_ATTRIBUTE = NULL;
-
-Alloc_nodeArray *gpNodesArray IN_PDU_RAM_SECTION = NULL;
-Alloc_plugArray *gpPlugsArray IN_PDU_RAM_SECTION = NULL;
-Alloc_contactorArray *gpContactorsArray IN_PDU_RAM_SECTION = NULL;
-Tactic_copbarArray *gpCopBarArray IN_PDU_RAM_SECTION = NULL;
-Tactic_pwrpoolArray *gpPoolArray IN_PDU_RAM_SECTION = NULL;
+#define CONTEXT_EXPANDER_PROJ_GLOBAL(x) VAR_TYPE(x) * VAR_NAME(x) IN_PDU_RAM_SECTION = NULL
+VARIABLE_LIST_PENDING_EXPANDED
+#undef CONTEXT_EXPANDER_PROJ_GLOBAL
 #else
-extern Alloc_nodeArray *gpNodesArray;
-extern Alloc_plugArray *gpPlugsArray;
-extern Alloc_contactorArray *gpContactorsArray;
-extern Tactic_copbarArray *gpCopBarArray;
-extern Tactic_pwrpoolArray *gpPoolArray;
+#define CONTEXT_EXPANDER_PROJ_GLOBAL(x) extern VAR_TYPE(x) * VAR_NAME(x)
+VARIABLE_LIST_PENDING_EXPANDED
+#undef CONTEXT_EXPANDER_PROJ_GLOBAL
 #endif // __IMPORT_GLOBALVAR__
 #ifdef __IMPORT_PDU_MALLOC__
 
-static uint8_t custom_mem_pool[CUSTOM_HEAP_SIZE] IN_PDU_HEAP_SECTION = {0};
-void *pdu_calloc(size_t size)
+static void *pdu_mem_alloc(size_t size, void *ptr)
 {
+#define ALIGN_SIZE(s) (((s) + 3u) & ~3u)
+    static uint8_t custom_mem_pool[CUSTOM_HEAP_SIZE] IN_PDU_HEAP_SECTION = {0};
     static size_t custom_mem_offset IN_PDU_RAM_SECTION = 0;
-    if (!size)
+    static void *last_alloc_ptr IN_PDU_RAM_SECTION = NULL; // record last allocation pointer
+    static size_t last_alloc_size IN_PDU_RAM_SECTION = 0;  //...size
+
+    // reset default
+    if (0 == size && ptr == NULL)
     {
         custom_mem_offset = 0;
+        last_alloc_ptr = (void*)custom_mem_pool;
+        last_alloc_size = 0;
         return NULL;
     }
 
-    size = (size + 3) & ~3; // allign
+    // allign!! _(:з」∠)_
+    size = ALIGN_SIZE(size);
 
-    if (custom_mem_offset + size > __PDU_CORE_HEAP_size__)
+    // REALLOC branch
+    if (ptr != NULL)
     {
-        return NULL;
+        // verify last pointer
+        if (ptr != last_alloc_ptr)
+        {
+            return NULL;
+        }
+
+        if (size == last_alloc_size)
+        {
+            return ptr;
+        }
+        else if (size < last_alloc_size)
+        {
+            // shrink
+            size_t shrink_size = last_alloc_size - size;
+            custom_mem_offset -= shrink_size;
+            last_alloc_size = size;
+            return ptr;
+        }
+        else
+        {
+            // expand
+            size_t expand_size = size - last_alloc_size;
+            if (custom_mem_offset + expand_size > CUSTOM_HEAP_SIZE)
+            {
+                return NULL;
+            }
+            custom_mem_offset += expand_size;
+            memset((uint8_t *)ptr + last_alloc_size, 0, expand_size);
+            last_alloc_size = size;
+            return ptr;
+        }
     }
+    // CALLOC branch
+    else
+    {
 
-    void *ptr = (void *)(custom_mem_pool + custom_mem_offset);
+        if (custom_mem_offset + size > CUSTOM_HEAP_SIZE)
+        {
+            return NULL;
+        }
 
-    custom_mem_offset += size;
-    memset(ptr, 0, size);
+        void *new_ptr = (void *)(custom_mem_pool + custom_mem_offset);
+        custom_mem_offset += size;
+        memset(new_ptr, 0, size);
 
-    return ptr;
+        last_alloc_ptr = new_ptr;
+        last_alloc_size = size;
+        return new_ptr;
+    }
+}
+void *pdu_calloc(size_t size)
+{
+    return pdu_mem_alloc(size, NULL); // ptr=NULL --> calloc
+}
+
+static void *pdu_realloc(void *ptr, size_t size)
+{
+    return pdu_mem_alloc(size, ptr); // ptr≠NULL --> realloc
 }
 #endif // pdu_malloc
 uint32_t list_len_safe(const ListObj *list, uint32_t max);
+// cstat !CERT-EXP37-C_b
+// cstat !MISRAC2012-Rule-8.3
+// cstat !CERT-DCL40-C
 void print_oneliner(const char *format, ...);
-typedef enum
-{
-    UNAVAILABLE = 0,
-    MALFUNCTION,
-    CIRCUMSTANT
-} PDU_DATA_STATE;
-typedef enum
-{
-    PDU_STA_NOREADY = 0, // PDU未就绪
 
-    PDU_STA_DISCARD, // PDU故障
-    PDU_STA_WORKING, // PDU运行
-    PDU_STA_STANDBY, // PDU旁路
-    PDU_STA_TOPOGRAPH,
-    PDU_STA_UNKNOWN
-} PDU_STA;
-typedef enum
-{
-    PDU_CMD_INITIAT = 0, // 模块初始
-    PDU_CMD_STANDBY,     // 模块旁路
-    PDU_CMD_WORKON,      // 模块工作
-    PDU_CMD_VISUAL,      // 模块可视
-    PDU_CMD_UNKNOWN
-} PDU_CMD;
-
+typedef enum PDU_STA_T PDU_STA;
+typedef enum PDU_CMD_T PDU_CMD;
 #endif // PDUBROKER_H

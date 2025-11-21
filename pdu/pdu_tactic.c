@@ -1,119 +1,44 @@
 #include "pdu_broker.h"
 #include "pdu_tactic.h"
-#include "pdu_ex_datatype.h"
 #include <stdint.h>
-#define __PDU_CORE_EXPORT__
-#include "interware.h"
 
-union PCU_RawData retriver_PCU_RawData_of_node(uint32_t id, PCURawData data_type)
+int32_t quota_Of_Demander(ID_TYPE plug_id, bool bIsMax)
 {
-    if (id > NODE_MAX)
-    {
-        return (union PCU_RawData){.int32_data = 0};
-    }
-    switch (data_type)
-    {
-    case PCUDATA_OF_NODE_WORKHOURS:
-    {
+    float gross = bIsMax ? PLUG_REF(plug_id)->strategy_info.longing : PLUG_REF(plug_id)->strategy_info.demand;
+    gross = (gross > 0.0f) ? gross + QUOTA_FLUCT : 0.0f;
 
-        uint32_t workhours = proper_get_PwrnodeInfo_ExportPDU(id)->work_time; // Placeholder for actual workhours retrieval logic
-        return (union PCU_RawData){.int32_data = workhours};
-    }
-    default:
-        return (union PCU_RawData){.int32_data = 0};
-    }
-}
-union PCU_RawData retriver_PCU_RawData_of_contactors(uint32_t id, PCURawData data_type)
-{
-    if (id > CONTACTOR_MAX)
-    {
-        return (union PCU_RawData){.int32_data = 0};
-    }
-    return (union PCU_RawData){.int32_data = 0};
-}
-union PCU_RawData retriver_PCU_RawData_of_plug(uint32_t id, PCURawData data_type)
-{
-    if (id > PLUG_MAX)
-    {
-        return (union PCU_RawData){.int32_data = 0};
-    }
-    return (union PCU_RawData){.int32_data = 0};
-}
-union PCU_RawData retriver_PCU_RawData(uint32_t id, PCURawData data_type)
-{
+    float q = ceilf(gross / MAXIM_CURRENT_OF_NODE);
 
-    if (data_type & PCUDATA_OF_NODE)
+    /* 1. assert NaN / Inf */
+    if (!(bool)isfinite(q))
     {
-        return retriver_PCU_RawData_of_node(id, data_type);
+        return INT32_MIN;
     }
-    else if (data_type & PCUDATA_OF_CONTACTORS)
+    // cstat #CERT-FLP36-C
+    /* 2. within range int32_t  */
+    if (q > (float)INT32_MAX)
     {
-        return retriver_PCU_RawData_of_contactors(id, data_type);
+        return INT32_MAX; /* cast */
     }
-    else if (data_type & PCUDATA_OF_PLUG)
+    if (q < (float)INT32_MIN)
     {
-        return retriver_PCU_RawData_of_plug(id, data_type);
+        return INT32_MIN;
     }
-    else
-    {
-        return (union PCU_RawData){.int32_data = 0};
-    }
+
+    /* 3. checked conversion */
+    return (int32_t)q;
 }
 
-#define QUOTA_FLUCT 10.0f
-#define MAXIM_PWR_OF_NODE 40.0f
-#define MINIMUM_QUOTA 1
-#define PRIORITY_ASSERT(x) ((gpPlugsArray->criteria & (x)) > 0)
-#define GET_PCU_RAWDATA(id, data, type) (retriver_PCU_RawData(id, data).type##_data)
-static uint32_t seniority_Of_Node(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
-{
-#define RANGE_NORMALIZE_LEFT 0
-#define RANGE_NORMALIZE_RIGHT RANGE_NORMALIZE_LEFT + 100
-
-    uint32_t workhours;
-
-    if (plug->strategy_info.workhours_topnode <= plug->strategy_info.workhours_bottomnode)
-    {
-        return (RANGE_NORMALIZE_RIGHT - RANGE_NORMALIZE_LEFT) / 2;
-    }
-    else
-    {
-        workhours = GET_PCU_RAWDATA(ID_OF(node), PCUDATA_OF_NODE_WORKHOURS, int32);
-        workhours = workhours > 0 ? workhours : 0;
-        workhours = (workhours * (RANGE_NORMALIZE_RIGHT - RANGE_NORMALIZE_LEFT) / (plug->strategy_info.workhours_topnode - plug->strategy_info.workhours_bottomnode));
-        workhours = RANGE_NORMALIZE_RIGHT - RANGE_NORMALIZE_LEFT - workhours;
-        return workhours % (100 + 1);
-    }
-}
-
-static uint32_t seniority_Of_Contactor(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
-{
-    return 0;
-}
-
-static uint32_t holding_Of_PlugChargedBy_Node(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
-{
-    struct Alloc_plugObj *plug_of_node = PLUG_REF(node->chargingplug_Id);
-    uint8_t num = gear_num(plug_of_node);
-    return num > (WEIGHT_HIERARCHY - 1) ? (WEIGHT_HIERARCHY - 1) : num;
-}
-static uint32_t usageratio_Of_Pool(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
-{
-    uint32_t nodes_worked = POOL_REF(POOL_OF_NODE(ID_OF(node)))->nodes_worked;
-    nodes_worked = (NODES_PER_POOL - nodes_worked) * (WEIGHT_HIERARCHY - 1) / NODES_PER_POOL;
-    return nodes_worked;
-}
-
-bool shareable_By_Priority(PRIOR req_priority, PRIOR target_priority)
-{
-    return ((req_priority == target_priority) || (PRIOR_VIP == req_priority && PRIOR_BASE == target_priority));
-}
-bool deprivable_By_Priority(PRIOR req_priority, PRIOR target_priority)
+static bool deprivable_By_Priority(PRIOR req_priority, PRIOR target_priority)
 {
 #define UNOCCUPIED 2 // 空闲
 #define DEPRIVABLE 1 // 占用但可剥夺
 #define IMPARTICIP 0 // 不可剥夺
-    bool bPreempt = false;
+    bool bPreempt;
+    if (PRIOR_VAIN == req_priority)
+    {
+        return true;
+    }
     switch (req_priority)
     {
     case PRIOR_EXTREME: // 最高优先级：可抢占任何优先级
@@ -122,31 +47,36 @@ bool deprivable_By_Priority(PRIOR req_priority, PRIOR target_priority)
     case PRIOR_SVIP: // 可抢占优先级PRIOR_BASE
         bPreempt = (target_priority == PRIOR_BASE);
         break;
+
     case PRIOR_VIP:  // 不可抢占PRIOR_BASE优先级,只可分摊
-                     // fallthru
+                     /* MISRA C:2012 Rule 16.3: wilfull fallthru to default */
     case PRIOR_BASE: // 该优先级不能抢占其他优先级
-                     // fallthru
+                     /* MISRA C:2012 Rule 16.3: wilfull fallthru to default */
     default:
         bPreempt = false;
+        break;
     }
     return bPreempt;
 }
-
-static uint32_t peer_Competitor(struct Alloc_plugObj *plug)
+static bool shareable_By_Priority(PRIOR req_priority, PRIOR target_priority)
+{
+    return (req_priority == target_priority || (PRIOR_VIP == req_priority && PRIOR_BASE == target_priority));
+}
+static uint32_t peer_Competitor(const struct Alloc_plugObj *plug)
 {
     ListObj *pos;
     uint32_t quantum = 0;
-    VLA_INSTANT(uint32_t, chargingplug_array, CONTACTORS_PER_NODE);
+    VLA_INSTANT(ID_TYPE, chargingplug_array, CONTACTORS_PER_NODE);
     list_for_each(pos, &plug->copula)
     {
-        uint32_t chargingplug_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id;
-        uint32_t node_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->id;
+        ID_TYPE chargingplug_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id;
+        ID_TYPE node_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->id;
         if (chargingplug_id == ID_OF(plug))
         {
             continue;
         }
         ListObj *contactor = get_Cross_BtwnPlugNode(node_id, chargingplug_id);
-        if (contactor && !contactor->ia_contacted)
+        if ((bool)contactor && !contactor->ia_contacted)
         {
             continue;
         }
@@ -170,12 +100,12 @@ static uint32_t peer_Competitor(struct Alloc_plugObj *plug)
     }
     return quantum;
 }
-static uint32_t peer_Resource(struct Alloc_plugObj *plug)
+static uint32_t peer_Resource(const struct Alloc_plugObj *plug)
 {
     ListObj *pos;
     uint32_t quantum = 0;
-    PRIOR req_priority = PRIOR_VAIN;
-    PRIOR target_priority = PRIOR_VAIN;
+    PRIOR req_priority, target_priority;
+
     list_for_each(pos, &plug->copula)
     {
         req_priority = plug->strategy_info.priority;
@@ -187,11 +117,87 @@ static uint32_t peer_Resource(struct Alloc_plugObj *plug)
     }
     return quantum;
 }
+static int32_t seniority_Of_Node_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+#define RANGE_NORMALIZE 100
 
-static uint32_t usage_Of_Node(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
+    uint32_t workhours;
+
+    if (plug->strategy_info.workhours_topnode <= plug->strategy_info.workhours_bottomnode)
+    {
+        return (RANGE_NORMALIZE) / 2;
+    }
+    else
+    {
+        workhours = (uint32_t)GET_PCU_RAWDATA(ID_OF(node), PCUDATA_OF_NODE_WORKHOURS, int32);
+        workhours = workhours > 0 ? workhours : 0;
+        workhours = workhours * RANGE_NORMALIZE / (plug->strategy_info.workhours_topnode - plug->strategy_info.workhours_bottomnode);
+        workhours = RANGE_NORMALIZE - workhours;
+        return (int32_t)(workhours % (RANGE_NORMALIZE + 1));
+    }
+}
+static int32_t seniority_Of_Contactor_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    return 0;
+}
+static int32_t holding_Of_PlugChargedBy_Node_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    struct Alloc_plugObj *plug_of_node = PLUG_REF(node->chargingplug_Id);
+    int32_t num = (int32_t)gear_num(plug_of_node);
+    return num > (WEIGHT_HIERARCHY - 1) ? (WEIGHT_HIERARCHY - 1) : num;
+}
+static int32_t usageratio_Of_Pool_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    uint32_t nodes_worked = POOL_REF(POOL_OF_NODE(ID_OF(node)))->nodes_worked;
+    nodes_worked = (NODES_PER_POOL - nodes_worked) * (WEIGHT_HIERARCHY - 1) / NODES_PER_POOL;
+    return (int32_t)nodes_worked;
+}
+static int32_t overload_Of_CopperBar_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    // cstat #CERT-FLP36-C #CERT-FLP34-C
+    ID_TYPE bar_id = COPPERBAR_OF_CONTACTOR(id_contactor);
+    ID_TYPE pool_id = POOL_OF_CONTACTOR(id_contactor);
+
+    ListObj *pos;
+    float total_ampere = 0.0f;
+    int quota = quota_Of_Demander(ID_OF(plug), false);
+    if (0 == quota)
+    {
+        return -1;
+    }
+    float step_ampere = (float)(plug->strategy_info.longing / (quota * 1.0));
+    list_for_each(pos, &plug->copula)
+    {
+        if (!pos->ia_contacted)
+        {
+            continue;
+        }
+        if (pool_id != POOL_OF_CONTACTOR(ID_OF(pos)))
+        {
+            continue;
+        }
+        float current = GET_PCU_RAWDATA(ID_OF(pos), PCUDATA_OF_NODE_CURRENT, float);
+        if (!pos->ia_contacted)
+        {
+            continue;
+        }
+        if (current > 5.0f)
+        {
+            total_ampere += current;
+        }
+        else
+        {
+            total_ampere += step_ampere;
+        }
+    }
+
+    return (total_ampere + step_ampere > COPBAR_REF(bar_id)->current_max + 10.0f) ? 1 : -1;
+}
+
+static int32_t usage_Of_Node_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
 {
 
-    if (!plug || !node)
+    if (!(bool)plug || !(bool)node)
     {
         return 0;
     }
@@ -209,7 +215,7 @@ static uint32_t usage_Of_Node(struct Alloc_plugObj *plug, struct Alloc_nodeObj *
     {
         return IMPARTICIP;
     }
-    bool bPreempt = false;
+    bool bPreempt;
     PRIOR req_priority = plug->strategy_info.priority;
     PRIOR target_priority = node->priority;
 
@@ -217,161 +223,163 @@ static uint32_t usage_Of_Node(struct Alloc_plugObj *plug, struct Alloc_nodeObj *
 
     return (bPreempt ? DEPRIVABLE : IMPARTICIP);
 }
-static uint32_t overload_Of_CopperBar(struct Alloc_plugObj *plug, struct Alloc_nodeObj *node, uint32_t id_contactor)
+static int32_t shortage_Of_Plug_Reverse_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
 {
-    return 0;
+    ID_TYPE plug_id = node->chargingplug_Id;
+    int32_t shortage = PLUG_REF(plug_id)->strategy_info.shortage_demand;
+    return (int32_t)(POSTPRIMA_WEIGHT1 - 1 - shortage % POSTPRIMA_WEIGHT1);
 }
-RATING_RANK SCOREDEED_ARRAY[] = {
-    [0] = {WEIGHT_CONTACTOR_ACT, seniority_Of_Contactor, CRITERION_EQU_SANITY},
-    [1] = {WEIGHT_WORK_TIME, seniority_Of_Node, CRITERION_EQU_SANITY},
-    [2] = {WEIGHT_POOL_OCCUPIED, usageratio_Of_Pool, CRITERION_EQU_SANITY},
-    [3] = {WEIGHT_HOLDING, holding_Of_PlugChargedBy_Node, CRITERION_PRIOR},
-    [4] = {WEIGHT_DEPRIV, usage_Of_Node, CRITERION_PRIOR},
-    [5] = {WEIGHT_COPBAR, overload_Of_CopperBar, CRITERION_LMT_CAPACITY},
+static int32_t priority_Of_Plug_Reverse_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    PRIOR priority = node->priority;
+    return (int32_t)((size_t)PRIOR_EXTREME - (size_t)priority);
+}
+static int32_t possess_Of_Plug_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    ID_TYPE plug_id = node->chargingplug_Id;
+    uint32_t possess = gear_num(PLUG_REF(plug_id));
+    return (int32_t)possess;
+}
+static int32_t sharable_Of_Plug_ScoringRule(const struct Alloc_plugObj *plug, const struct Alloc_nodeObj *node, ID_TYPE id_contactor)
+{
+    PRIOR req_priority = plug->strategy_info.priority;
+    PRIOR target_priority = node->priority;
+    int32_t shareship;
+    if (plug->id == node->chargingplug_Id)
+    {
+        shareship = -1;
+    }
+    else
+    {
+        shareship = shareable_By_Priority(req_priority, target_priority) ? 1 : -1;
+    }
+
+    return shareship;
+}
+
+static inline int32_t succession_Heirs_ScoringRule(const STRAGTEGY_BASIS *factor, ID_TYPE current_chargee_id, ID_TYPE target_chargee_id)
+{
+    if (current_chargee_id == target_chargee_id)
+    {
+        return -1;
+    }
+
+    double duration_component = factor->duration * WEIGHT_HIERARCHY * 1.0 / (uint16_t)-1;
+    double soc_component = POSTPRIMA_WEIGHT1 * (factor->soc * WEIGHT_HIERARCHY / 100.0);
+    int32_t demand_component = POSTPRIMA_WEIGHT2 * factor->shortage_demand;
+    int32_t priority_component = POSTPRIMA_WEIGHT3 * factor->priority;
+    int32_t demand_flag_component = POSTPRIMA_WEIGHT4 * (factor->shortage_demand > 0);
+
+    return (int32_t)(duration_component + soc_component + demand_component + priority_component + demand_flag_component);
+}
+
+const RATING_RANK SCOREDEED_ARRAY_PREEMPT[] = {
+    [0] = {WEIGHT_CONTACTOR_ACT, seniority_Of_Contactor_ScoringRule, CRITERION_EQU_SANITY},
+    [1] = {WEIGHT_WORK_TIME, seniority_Of_Node_ScoringRule, CRITERION_EQU_SANITY},
+    [2] = {WEIGHT_POOL_OCCUPIED, usageratio_Of_Pool_ScoringRule, CRITERION_EQU_SANITY},
+    [3] = {WEIGHT_HOLDING, holding_Of_PlugChargedBy_Node_ScoringRule, CRITERION_PRIOR},
+    [4] = {WEIGHT_DEPRIV, usage_Of_Node_ScoringRule, CRITERION_PRIOR},
+    [5] = {WEIGHT_POLARITY, overload_Of_CopperBar_ScoringRule, CRITERION_LMT_CAPACITY},
     [6] = {WEIGHT_BLANK, NULL, CRITERION_MIN_COST},
     [7] = {WEIGHT_BLANK, NULL, CRITERION_MIN_COST},
     [8] = {WEIGHT_BLANK, NULL, CRITERION_MAX_POWER},
     [9] = {WEIGHT_BLANK, NULL, CRITERION_MAX_EFFICIENCY},
 };
-
-int get_Score_Of_Node(RATING_RANK *tab, struct Alloc_plugObj *plug, uint32_t id_contactor)
+const RATING_RANK SCOREDEED_ARRAY_RELIEVE[] = {
+    [0] = {POSTPRIMA_WEIGHT0, shortage_Of_Plug_Reverse_ScoringRule, CRITERION_ALLOWANCE_MINIMUM},
+    [1] = {POSTPRIMA_WEIGHT1, priority_Of_Plug_Reverse_ScoringRule, CRITERION_ALLOWANCE_MINIMUM},
+    [2] = {POSTPRIMA_WEIGHT2, possess_Of_Plug_ScoringRule, CRITERION_ALLOWANCE_MINIMUM},
+    [3] = {WEIGHT_BLANK, NULL, CRITERION_ALLOWANCE_MINIMUM},
+};
+const RATING_RANK SCOREDEED_ARRAY_SHARING[] = {
+    [0] = {POSTPRIMA_WEIGHT0, shortage_Of_Plug_Reverse_ScoringRule, CRITERION_PEERS_FAIRNOFAVOR},
+    [1] = {POSTPRIMA_WEIGHT1, possess_Of_Plug_ScoringRule, CRITERION_PEERS_FAIRNOFAVOR},
+    [2] = {WEIGHT_POLARITY, sharable_Of_Plug_ScoringRule, CRITERION_PEERS_FAIRNOFAVOR},
+    [3] = {WEIGHT_BLANK, NULL, CRITERION_PEERS_FAIRNOFAVOR},
+};
+static const EVALUATION_REFER_TAB Eulection_Tree[] = {
+    EVALUATION_REFER_MACRO(PREEMPT),
+    EVALUATION_REFER_MACRO(SHARING),
+    EVALUATION_REFER_MACRO(RELIEVE),
+    {handle_Tactic_INHERIT, "handle_Tactic_INHERIT", NULL}};
+static int get_Score_Of_Node(const RATING_RANK *tab, struct Alloc_plugObj *plug, ID_TYPE id_contactor)
 {
     struct Alloc_nodeObj *node = NODEREF_FROM_CONTACTOR(id_contactor);
-    if (!tab || !node || !plug || !id_contactor)
-    {
-        return 0;
-    }
     int score = 0;
-    while (tab && tab->func && PRIORITY_ASSERT(tab->criteria))
+    if (!(bool)tab || !(bool)node || !(bool)plug || !(bool)id_contactor)
     {
-        score += tab->func(plug, node, id_contactor) * tab->weight;
+        return score;
+    }
+    if (node->discarded || CONTACTOR_REF(id_contactor)->discarded)
+    {
+        return score;
+    }
+
+    while (NULL != tab->func)
+    {
+        if (!PRIORITY_ASSERT(tab->criteria))
+        {
+            tab++;
+            continue;
+        }
+        if (WEIGHT_POLARITY == tab->weight)
+        {
+            score *= tab->func(plug, node, id_contactor);
+        }
+        else
+        {
+            score += tab->func(plug, node, id_contactor) * tab->weight;
+        }
+
         tab++;
     }
     return score;
 }
-
-static void score_print(OPTIMAL *optimum, OPTIMAL *candidates, uint32_t credits)
+static void score_print(const OPTIMAL *optimum, const OPTIMAL *candidates, uint32_t credits)
 {
-    if (credits > 0)
+#define SCORE_PRINT_PERLINE (5)
+    if (0 == credits)
     {
-        char buffer[512];
-        int offset = 0;
+        return;
+    }
+    char buffer[256];
+    int offset = 0;
 
-        // Print optimal node info
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "(%d)",
-                           (optimum ? optimum->node_id : 0));
+    // Print optimal node info
+    // cstat -CERT-ERR33-C_a
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "(%d)",
+                       (NULL != optimum ? optimum->node_id : 0));
 
-        // Print candidates dynamically
-        for (int i = 0; i < credits && i < NODE_MAX && offset < sizeof(buffer) - 32; i++)
+    // Print candidates dynamically
+    for (int i = 0; i < credits && i < NODE_MAX && offset < sizeof(buffer) - 32; i++)
+    {
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset, " %" PRIu32 ":%" PRId32,
+                           candidates[i].node_id, candidates[i].score);
+        if (SCORE_PRINT_PERLINE == i % (SCORE_PRINT_PERLINE + 1))
         {
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset, " %d:%d",
-                               candidates[i].node_id, candidates[i].score);
+            print_oneliner("%s", buffer);
+            offset = 0;
         }
-
+    }
+    // cstat +CERT-ERR33-C_a
+    if (0 < offset)
+    {
         print_oneliner("%s", buffer);
     }
 }
+// cstat !MISRAC2012-Rule-8.7
 void set_allocation_criterion(CRITERION criterion)
 {
-    gpPlugsArray->criteria |= criterion;
+    CRITERIA |= (size_t)criterion;
 }
-
-static void order_Node(struct Alloc_nodeObj *node)
-{
-
-    node->value_Iset = 100.0f;
-    node->value_Vset = 400.0f;
-
-    draw_pwrnode(ID_OF(node), true);
-}
-
-static void order_Plug(struct Alloc_plugObj *plug)
-{
-
-    const ListObj *header = &plug->copula;
-    int length = list_len_safe(header, CONTACTOR_MAX);
-    length = length / NODES_PER_POOL + !!(length % NODES_PER_POOL);
-
-    VLA_INSTANT(size_t, thisplug_pos_array, length);
-
-    ListObj *pos;
-
-#define ADD_TO_ARRAY(new_id, array, cnt, len) \
-    do                                        \
-    {                                         \
-        int _added = 0;                       \
-        for (int i = 0; i < cnt; i++)         \
-        {                                     \
-            if ((array)[i] == (new_id))       \
-            {                                 \
-                _added = 1;                   \
-                break;                        \
-            }                                 \
-        }                                     \
-        if (!_added && cnt < (len))           \
-        {                                     \
-            (array)[cnt] = (new_id);          \
-            cnt++;                            \
-        }                                     \
-    } while (0)
-
-    int index = 0;
-    list_for_each(pos, header)
-    {
-        int matrix = POOL_OF_CONTACTOR(ID_OF(pos)) - 1;
-        int plug_pos = matrix * CONTACTORS_PER_NODE + (ID_OF(pos) - 1) % CONTACTORS_PER_NODE + 1;
-
-        ADD_TO_ARRAY(plug_pos, thisplug_pos_array, index, length);
-    }
-    for (index = 0; index < length; index++)
-    {
-        draw_plug(thisplug_pos_array[index], true);
-    }
-#undef ADD_TO_ARRAY
-}
-
-uint32_t leftmost_Contactor_IN_Pool(uint32_t id_contactor)
-{
-    if (0 == id_contactor)
-    {
-        return 0;
-    }
-    uint32_t node_id = NODE_OF_CONTACTOR(id_contactor);
-
-    while (NODE_OF_CONTACTOR(id_contactor - 1) == node_id)
-    {
-        id_contactor--;
-    }
-    return id_contactor;
-}
-static void order_Contactor(ListObj *contactor)
-{
-    float iset = NODEREF_FROM_CONTACTOR(ID_OF(contactor))->value_Iset;
-    float vset = NODEREF_FROM_CONTACTOR(ID_OF(contactor))->value_Vset;
-    proper_set_Pwrnode_Output(ID_OF(contactor), vset, iset);
-
-    // 检查同一个节点其他接触器是否已经闭合
-    uint32_t leftmost_contactor_id = leftmost_Contactor_IN_Pool(ID_OF(contactor));
-    for (uint32_t id = leftmost_contactor_id; id < (CONTACTORS_PER_NODE + leftmost_contactor_id); id++)
-    {
-        if (CONTACTOR_REF(id)->ia_contacted == true)
-        {
-            CONTACTOR_REF(id)->ia_contacted = false;
-
-            draw_contactor(id, false);
-        }
-    }
-    contactor->ia_contacted = true;
-    draw_contactor(ID_OF(contactor), true);
-}
-
-static OPTIMAL *find_highest_score(OPTIMAL *aristo, int count, int blue_line)
+static const OPTIMAL *find_highest_score(const OPTIMAL *aristo, size_t count, int blue_line)
 {
     if (count <= 0)
+    {
         return NULL;
-
-    OPTIMAL *highest = &aristo[0];
-    for (int i = 1; i < count; i++)
+    }
+    const OPTIMAL *highest = aristo;
+    for (size_t i = 1; i < count; i++)
     {
         if (aristo[i].score > highest->score)
         {
@@ -381,9 +389,9 @@ static OPTIMAL *find_highest_score(OPTIMAL *aristo, int count, int blue_line)
 
     return (highest->score >= blue_line ? highest : NULL);
 }
-OPTIMAL *grading_Charger_Linked(const ListObj *last, OPTIMAL *optional, int cnt)
+static const OPTIMAL *grading_By_Scores(const RATING_RANK *prank, const ListObj *last, OPTIMAL *optional, size_t cnt, int32_t pass_line)
 {
-    if (!last || !optional)
+    if (!(bool)last || !(bool)optional)
     {
         return NULL;
     }
@@ -391,77 +399,14 @@ OPTIMAL *grading_Charger_Linked(const ListObj *last, OPTIMAL *optional, int cnt)
     (optional + cnt)->contactor_id = ID_OF(last);
     (optional + cnt)->node_id = NODE_OF_CONTACTOR(ID_OF(last));
     struct Alloc_plugObj *header = get_header_plug(ID_OF(last));
-    (optional + cnt)->score = get_Score_Of_Node(SCOREDEED_ARRAY, header, ID_OF(last));
-    //(optional + cnt)->score *= (optional + cnt)->foreheld ? -1 : 1;
-    return find_highest_score(optional, cnt + 1, PASS_LINE);
-}
-
-static uint32_t discover_Chargee_Depart_Routine(void)
-{
-    PlugInfoPtr plug_info = NULL;
-    for (uint8_t plug_id = 1; plug_id <= PLUG_MAX; plug_id++)
+    if (!(bool)header)
     {
-        plug_info = proper_get_PwrplugInfo_ExportPDU(plug_id);
-        if (!plug_info)
-        {
-            continue;
-        }
-        struct Alloc_plugObj *plug = PLUG_REF(plug_id);
-        if (PRIOR_VAIN != plug->strategy_info.priority && plug_info->status == PLUGIN_UNPLUGGED)
-        {
-            plug->strategy_info.demand = 0;
-            plug->strategy_info.workhours_bottomnode = 0;
-            plug->strategy_info.workhours_topnode = 0;
-            plug->strategy_info.priority = PRIOR_VAIN;
-            plug->strategy_info.shortage_demand = 0;
-
-            return plug_id;
-        }
+        return NULL;
     }
-    return 0;
+    (optional + cnt)->plug_id = header->id;
+    (optional + cnt)->score = get_Score_Of_Node(prank, header, ID_OF(last));
+    return find_highest_score(optional, cnt + 1, pass_line);
 }
-static uint32_t discover_Chargee_Demand_Routine(void)
-{
-    PlugInfoPtr plug_info = NULL;
-    for (uint8_t plug_id = 1; plug_id <= PLUG_MAX; plug_id++)
-    {
-        plug_info = proper_get_PwrplugInfo_ExportPDU(plug_id);
-        if (!plug_info)
-        {
-            continue;
-        }
-        if (PLUG_REF(plug_id)->strategy_info.demand < 0.0)
-        {
-            continue;
-        }
-        if (PRIOR_VAIN == PLUG_REF(plug_id)->strategy_info.priority && plug_info->status == PLUGIN_PLUGGED)
-        {
-            PLUG_REF(plug_id)->strategy_info.demand = plug_info->power_req;
-            PLUG_REF(plug_id)->strategy_info.priority = plug_info->priority;
-            return plug_id;
-        }
-    }
-    return 0;
-}
-
-static void checkout_Charger_Supply(uint32_t *order_plug_id, uint32_t *deorder_plug_id)
-{
-    if (!order_plug_id || !deorder_plug_id)
-    {
-        return;
-    }
-
-    *order_plug_id = 0;
-    *deorder_plug_id = 0;
-}
-
-static inline int quota_Of_Demander(uint32_t plug_id)
-{
-    float gross = PLUG_REF(plug_id)->strategy_info.demand;
-    gross = (gross > 0.0f) ? gross + QUOTA_FLUCT : 0.0f;
-    return (int)ceilf(gross / MAXIM_PWR_OF_NODE);
-}
-
 static void get_Amphextremum(struct Alloc_plugObj *chargee)
 {
 
@@ -469,7 +414,7 @@ static void get_Amphextremum(struct Alloc_plugObj *chargee)
     uint32_t workhours;
     list_for_each(pos, &chargee->copula)
     {
-        workhours = GET_PCU_RAWDATA(NODE_OF_CONTACTOR(ID_OF(pos)), PCUDATA_OF_NODE_WORKHOURS, int32);
+        workhours = (uint32_t)GET_PCU_RAWDATA(NODE_OF_CONTACTOR(ID_OF(pos)), PCUDATA_OF_NODE_WORKHOURS, int32);
         if (workhours < chargee->strategy_info.workhours_bottomnode)
         {
             chargee->strategy_info.workhours_bottomnode = workhours;
@@ -480,43 +425,19 @@ static void get_Amphextremum(struct Alloc_plugObj *chargee)
         }
     }
 }
-static uint32_t count_Charging_Plug(uint32_t pool_id)
-{
-    if (pool_id > POOL_MAX)
-    {
-        return 0;
-    }
-    pool_id -= 1;
-    uint64_t count_bitmap = 0;
-    for (int node_id = (pool_id * NODES_PER_POOL + 1); node_id < (pool_id * NODES_PER_POOL + 1 + NODES_PER_POOL); node_id++)
-    {
-        if (NODE_REF(node_id)->chargingplug_Id != 0)
-        {
-            count_bitmap |= (1 << (NODE_REF(node_id)->chargingplug_Id));
-        }
-    }
-    int count = 0;
-    while (count_bitmap)
-    {
-        count += count_bitmap & 1;
-        count_bitmap >>= 1;
-    }
-
-    return count;
-}
-static void ordering_Procedure(const OPTIMAL *optimum)
+static void ordering_Procedure(const OPTIMAL *optimum, bool to_turnon)
 {
     struct Alloc_plugObj *chargee = PLUG_REF(optimum->plug_id);
     struct Alloc_nodeObj *node = NODE_REF(optimum->node_id);
-    if (!optimum || !chargee || !node || 0 == optimum->contactor_id)
+    if (!(bool)optimum || !(bool)chargee || !(bool)node || 0 == optimum->contactor_id)
     {
         return;
     }
 
     order_Node(node);
-    order_Contactor(CONTACTOR_REF(optimum->contactor_id));
+    order_Contactor(CONTACTOR_REF(optimum->contactor_id), to_turnon);
     order_Plug(chargee);
-
+    outcomes_Collate_Allocation(OUTCOMES_INC);
     if (0 < node->chargingplug_Id && PRIOR_VAIN != node->priority)
     {
         struct Alloc_plugObj *plug_released = PLUG_REF(node->chargingplug_Id);
@@ -527,246 +448,241 @@ static void ordering_Procedure(const OPTIMAL *optimum)
     }
 
     gear_insert(chargee, node);
-    POOL_REF(POOL_OF_NODE(optimum->node_id))->nodes_worked += (POOL_REF(POOL_OF_NODE(optimum->node_id))->nodes_worked < NODES_PER_POOL);
-    POOL_REF(POOL_OF_NODE(optimum->node_id))->plugs_linked = count_Charging_Plug(POOL_OF_NODE(optimum->node_id));
+    struct Tactic_PwrPoolObj *pool = POOL_REF(POOL_OF_NODE(optimum->node_id));
+    if (NULL != pool && pool->nodes_worked < NODES_PER_POOL)
+    {
+        pool->nodes_worked += 1;
+    }
 }
 
-void handle_Demands_From_Charger(struct Alloc_plugObj *chargee, int *pshortage)
+static bool deordering_Procedure(struct Alloc_plugObj *chargee, ListObj *devorced)
 {
+    ID_TYPE pool_id = 0;
+    struct Alloc_nodeObj *pnode = NODEREF_FROM_CONTACTOR(ID_OF(devorced));
+    if (CONTACTOR_REF(ID_OF(devorced))->ia_contacted == true)
+    {
+        outcomes_Collate_Allocation(pnode->id, 0, 0);
+        deorder_Contactor(devorced);
+        outcomes_Collate_Allocation(OUTCOMES_INC);
+    }
+
+    if (pnode->chargingplug_Id == chargee->id)
+    {
+        pnode->value_Iset = 0.0f;
+        pnode->value_Vset = 0.0f;
+        pnode->priority = PRIOR_VAIN;
+        pnode->chargingplug_Id = 0;
+        draw_pwrnode(ID_OF(pnode), true);
+        if (pool_id != POOL_OF_NODE(ID_OF(pnode)))
+        {
+            pool_id = POOL_OF_NODE(ID_OF(pnode));
+        }
+        POOL_REF(pool_id)->nodes_worked -= (int32_t)(!!(bool)((POOL_REF(pool_id)->nodes_worked)));
+        gear_remove(chargee, pnode);
+        return true;
+    }
+    return false;
+}
+
+static bool evaluate_candidates(struct Alloc_plugObj *chargee, char const *funcion_name, int32_t pass_line)
+{
+    if (!(bool)chargee || !(bool)funcion_name)
+    {
+        return false;
+    }
+    const RATING_RANK *prank = NULL;
+    for (int i = 0; i < sizeof(Eulection_Tree) / sizeof(EVALUATION_REFER_TAB); i++)
+    {
+        if (strncmp(funcion_name, Eulection_Tree[i].name, 21) == 0)
+        {
+            prank = Eulection_Tree[i].rank;
+            break;
+        }
+    }
+    if (NULL == prank)
+    {
+        return false;
+    }
     uint32_t credits = list_len_safe(&chargee->copula, NODE_MAX);
     if (0 == credits)
     {
-        return;
+        return false;
     }
     VLA_INSTANT(OPTIMAL, candidates, credits);
     ListObj *pos;
-    OPTIMAL *optimum = NULL;
+    const OPTIMAL *optimum = NULL;
 
     int cnt = 0;
     list_for_each(pos, &chargee->copula)
     {
-        optimum = grading_Charger_Linked(pos, candidates, cnt++ % credits);
+        optimum = grading_By_Scores(prank, pos, candidates, cnt++ % credits, pass_line);
     }
-
+    print_oneliner("[Tactic] %s:%" PRId32, funcion_name, pass_line);
     score_print(optimum, candidates, credits);
     if (NULL == optimum)
     {
         order_Plug(chargee);
-        return;
+        return false;
     }
     if ((0 == optimum->node_id) || (0 == optimum->contactor_id))
     {
-        return;
+        return false;
     }
     if ((NODE_MAX < optimum->node_id) || (CONTACTOR_MAX < optimum->contactor_id))
     {
-        return;
+        return false;
     }
 
     // print_oneliner("[Tactic] Allocating Node %d to Plug %d with Score %d", optimum.node_id, ID_OF(chargee), optimum.score);
-    *pshortage = ((*pshortage - 1) < 0 ? 0 : *pshortage - 1);
-    optimum->plug_id = ID_OF(chargee);
-
-    ordering_Procedure(optimum);
+    int shortage = chargee->strategy_info.shortage_demand - 1;
+    chargee->strategy_info.shortage_demand = (shortage < 0 ? 0 : shortage);
+#define CONTACTON true
+    ordering_Procedure(optimum, !CONTACTON);
+    return true;
+}
+static bool handle_Tactic_PREEMPT(struct Alloc_plugObj *chargee)
+{
+    bool res = evaluate_candidates(chargee, __func__, (WEIGHT_DEPRIV * DEPRIVABLE));
+    return res;
 }
 
-static void handle_Lowest_Node_Holdsome(struct Alloc_plugObj *chargee, int *pshortage)
+static bool handle_Tactic_RELIEVE(struct Alloc_plugObj *chargee)
 {
-#define GRADING_BY(shortage, prior, possess) ((int)(POSTPRIMA_WEIGHT1 - 1 - shortage % POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT1 * (PRIOR_EXTREME - prior) + POSTPRIMA_WEIGHT2 * possess))
-    if (!chargee || !PRIORITY_ASSERT(CRITERION_ALLOWANCE_MINIMUM))
-    {
-        return;
-    }
-    uint32_t resources = list_len_safe(&chargee->copula, NODE_MAX);
-    VLA_INSTANT(OPTIMAL, candidates, resources);
-    ListObj *pos;
-    int cnt = 0;
-    list_for_each(pos, &chargee->copula)
-    {
-        uint32_t plug_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id;
-        if (plug_id == 0)
-        {
-            continue;
-        }
-
-        struct Alloc_plugObj *plug_released = PLUG_REF(plug_id);
-        candidates[cnt++ % resources] = (OPTIMAL){
-            .plug_id = ID_OF(chargee),
-            .node_id = NODE_OF_CONTACTOR(ID_OF(pos)),
-            .contactor_id = ID_OF(pos),
-            .score = GRADING_BY(plug_released->strategy_info.shortage_demand, NODE_REF(ID_OF(pos))->priority, gear_num(plug_released))};
-    }
-
-    OPTIMAL *optimum = find_highest_score(candidates, resources, POSTPRIMA_WEIGHT2 * MINIMUM_QUOTA);
-    score_print(optimum, candidates, resources);
-    if (NULL == optimum || 0 == optimum->node_id)
-    {
-        return;
-    }
-    *pshortage = ((*pshortage - 1) < 0 ? 0 : *pshortage - 1);
-    ordering_Procedure(optimum);
-#undef GRADING_BY
+    bool res = evaluate_candidates(chargee, __func__, (POSTPRIMA_WEIGHT2 * MINIMUM_QUOTA));
+    return res;
 }
-void handle_Shortage_From_Peers(struct Alloc_plugObj *chargee, int *pshortage)
+static bool handle_Tactic_SHARING(struct Alloc_plugObj *chargee)
 {
-#define GRADING_BY(shortage, possess, sharable) ((int)(POSTPRIMA_WEIGHT1 - 1 - shortage % POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT1 * possess + POSTPRIMA_WEIGHT2 * (sharable)))
-    if (!chargee || !PRIORITY_ASSERT(CRITERION_PEERS_FAIRNOFAVOR))
-    {
-        return;
-    }
-
     uint32_t peers = peer_Competitor(chargee) + 1;
     uint32_t resources = peer_Resource(chargee);
     if (0 == resources || 0 == peers)
     {
-        return;
+        return false;
     }
     uint32_t floor_supply = (resources + 1) / peers;
     floor_supply = (floor_supply > 1) ? floor_supply : 1;
     if (floor_supply <= gear_num(chargee))
     {
-        return;
-    }
-    VLA_INSTANT(OPTIMAL, candidates, resources);
-    const ListObj *pos;
-    int cnt = 0;
-    list_for_each(pos, &chargee->copula)
-    {
-        uint32_t plug_id = NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id;
-        if (plug_id == 0)
-        {
-            continue;
-        }
-
-        struct Alloc_plugObj *plug_released = PLUG_REF(plug_id);
-        PRIOR req_priority = chargee->strategy_info.priority;
-        PRIOR target_priority = NODEREF_FROM_CONTACTOR(ID_OF(pos))->priority;
-
-        candidates[cnt++ % resources] = (OPTIMAL){
-            .contactor_id = ID_OF(pos),
-            .node_id = NODE_OF_CONTACTOR(ID_OF(pos)),
-            .score = GRADING_BY(plug_released->strategy_info.shortage_demand, gear_num(plug_released), shareable_By_Priority(req_priority, target_priority)),
-            .plug_id = ID_OF(chargee)};
+        return false;
     }
 
-    OPTIMAL *optimum = find_highest_score(candidates, resources, (floor_supply + 1) * POSTPRIMA_WEIGHT1 + POSTPRIMA_WEIGHT2);
-    score_print(optimum, candidates, resources);
-    if (NULL == optimum || 0 == optimum->node_id)
-    {
-        return;
-    }
-    *pshortage = ((*pshortage - 1) < 0 ? 0 : *pshortage - 1);
-    ordering_Procedure(optimum);
-#undef GRADING_BY
+    bool res = evaluate_candidates(chargee, __func__, (int32_t)((floor_supply + 1) * POSTPRIMA_WEIGHT1));
+    return res;
 }
-void meet_Remand_Shortage(struct Alloc_plugObj *chargee)
-{
-#define GRADING_BY(demand, priority) ((int)(demand + POSTPRIMA_WEIGHT1 * priority))
 
+static bool handle_Tactic_INHERIT(struct Alloc_plugObj *chargee)
+{
     if (!chargee)
     {
-        return;
+        return false;
     }
-    uint32_t list_len = list_len_safe(&chargee->copula, NODE_MAX);
-
-    if (list_len == 0)
+    uint32_t listlengh = list_len_safe(&chargee->copula, NODE_MAX);
+    if (listlengh == 0)
     {
-        return;
+        return false;
     }
-    struct Alloc_plugObj *other_chargee = NULL;
-    uint32_t leftmost_id = 0;
     const ListObj *pos;
-    VLA_INSTANT(OPTIMAL, candidates, CONTACTORS_PER_NODE);
     list_for_each(pos, &chargee->copula)
     {
-        if (pos->ia_contacted == true)
+        const struct Alloc_nodeObj *node_ref = NODEREF_FROM_CONTACTOR(ID_OF(pos));
+        if (node_ref->chargingplug_Id > 0 || node_ref->priority != PRIOR_VAIN || node_ref->discarded)
         {
             continue;
         }
-        leftmost_id = leftmost_Contactor_IN_Pool(ID_OF(pos));
-        if (0 == leftmost_id)
-        {
-            continue;
-        };
+        ID_TYPE leftmost_id = leftmost_Contactor_IN_Pool(ID_OF(pos));
         bool occupied = false;
-
-        for (uint32_t id = leftmost_id; id < (leftmost_id + CONTACTORS_PER_NODE); id++)
+        VLA_INSTANT(OPTIMAL, candidates, CONTACTORS_PER_NODE);
+        for (ID_TYPE id = leftmost_id; id < leftmost_id + CONTACTORS_PER_NODE; id++)
         {
-            other_chargee = get_header_plug(id);
-            occupied |= CONTACTOR_REF(id)->ia_contacted;
-            if (NULL != other_chargee && 0 < other_chargee->strategy_info.shortage_demand)
+            struct Alloc_plugObj *other_chargee = get_header_plug(id);
+            if (!other_chargee || CONTACTOR_REF(id)->discarded)
             {
+                continue;
+            }
 
-                *(candidates + (id - leftmost_id) % CONTACTORS_PER_NODE) = (OPTIMAL){
-                    .contactor_id = id,
-                    .node_id = NODE_OF_CONTACTOR(id),
-                    .plug_id = ID_OF(other_chargee),
-                    .score = GRADING_BY(other_chargee->strategy_info.shortage_demand, other_chargee->strategy_info.priority)};
-            }
-            else
-            {
-                *(candidates + (id - leftmost_id) % CONTACTORS_PER_NODE) = (OPTIMAL){
-                    .contactor_id = 0,
-                    .node_id = NODE_OF_CONTACTOR(id),
-                    .plug_id = 0,
-                    .score = -1};
-            }
+            occupied = occupied || CONTACTOR_REF(id)->ia_contacted;
+            STRAGTEGY_BASIS *factor = &other_chargee->strategy_info;
+            candidates[(id - leftmost_id) % CONTACTORS_PER_NODE] = (OPTIMAL){
+                .contactor_id = id,
+                .node_id = NODE_OF_CONTACTOR(id),
+                .plug_id = ID_OF(other_chargee),
+                .score = succession_Heirs_ScoringRule(factor, ID_OF(other_chargee), ID_OF(chargee))};
         }
         if (occupied)
         {
             continue;
         }
-        OPTIMAL *optimum = find_highest_score(candidates, CONTACTORS_PER_NODE, 0);
-        score_print(optimum, candidates, CONTACTORS_PER_NODE);
-        if (NULL == optimum || 0 == optimum->node_id)
+        int32_t qualifying = (int32_t)(MINIMUM_QUOTA * POSTPRIMA_WEIGHT4 + PRIOR_BASE * POSTPRIMA_WEIGHT3 + MINIMUM_QUOTA * POSTPRIMA_WEIGHT2);
+        const OPTIMAL *optimum = find_highest_score(candidates, CONTACTORS_PER_NODE, qualifying);
+        if (!optimum || !optimum->node_id)
         {
             continue;
         }
-        other_chargee = PLUG_REF(optimum->plug_id);
-        other_chargee->strategy_info.shortage_demand -= !!other_chargee->strategy_info.shortage_demand;
-        ordering_Procedure(optimum);
+        struct Alloc_plugObj *target = PLUG_REF(optimum->plug_id);
+        if (target->strategy_info.shortage_demand > 0)
+        {
+            target->strategy_info.shortage_demand--;
+        }
+        print_oneliner("[Tactic] %s:%" PRId32, __func__, qualifying);
+        score_print(optimum, candidates, CONTACTORS_PER_NODE);
+        ordering_Procedure(optimum, CONTACTON);
     }
+    return true;
 #undef GRADING_BY
+#undef TRUNCATE_SCALING
 }
-void recycling_Dearler(struct Alloc_plugObj *chargee)
+void rescinding_Dealer(struct Alloc_plugObj *chargee, int kickoff)
 {
-    if (!chargee)
+    if (0 == kickoff)
     {
         return;
     }
-    order_Plug(chargee);
+    if (kickoff == gear_num(chargee))
+    {
+        order_Plug(chargee);
+    }
+    outcomes_Collate_Allocation(OUTCOMES_CLR);
+    ListObj *pos;
 
-    uint32_t pool_id = 0;
-    struct Alloc_nodeObj *pnode = NULL;
-
-    const ListObj *pos;
     list_for_each(pos, &chargee->copula)
     {
-        if (CONTACTOR_REF(ID_OF(pos))->ia_contacted == true)
+        if (0 == kickoff)
         {
-            CONTACTOR_REF(ID_OF(pos))->ia_contacted = false;
-            draw_contactor(ID_OF(pos), true);
+            break;
         }
-        pnode = NODEREF_FROM_CONTACTOR(ID_OF(pos));
-        if (pnode->chargingplug_Id == chargee->id)
+
+        if (deordering_Procedure(chargee, pos) && kickoff > 0)
         {
-            pnode->value_Iset = 0;
-            pnode->value_Vset = 0;
-            pnode->priority = PRIOR_VAIN;
-            pnode->chargingplug_Id = 0;
-            draw_pwrnode(ID_OF(pnode), true);
-            if (pool_id != POOL_OF_NODE(ID_OF(pnode)))
-            {
-                pool_id = POOL_OF_NODE(ID_OF(pnode));
-                POOL_REF(pool_id)->plugs_linked -= !!(POOL_REF(pool_id)->plugs_linked);
-            }
-            POOL_REF(pool_id)->nodes_worked -= !!(POOL_REF(pool_id)->nodes_worked);
+            kickoff--;
         }
     }
-    gear_clear(chargee);
+
     // print_oneliner("[Tactic] Recycling Plug %d completed.", ID_OF(chargee));
+    chargee->strategy_info.tag_realloc = REALLOCATOR;
+    print_oneliner(NULL);
+    return;
 }
 
+void insulatchk_Dealer(struct Alloc_plugObj *chargee)
+{
+    get_Amphextremum(chargee);
+    outcomes_Collate_Allocation(OUTCOMES_CLR);
+    bool res = PREEMPT[Eulection_Tree].func(chargee);
+    if (!res)
+    {
+        res = SHARING[Eulection_Tree].func(chargee);
+    }
+    if (!res)
+    {
+        res = RELIEVE[Eulection_Tree].func(chargee);
+    }
+    if (res)
+    {
+        chargee->strategy_info.tag_realloc = REALLOCATEE;
+    }
+    print_oneliner(NULL);
+    return;
+}
 void allocating_Dealer(struct Alloc_plugObj *chargee, int quota)
 {
 
@@ -774,69 +690,47 @@ void allocating_Dealer(struct Alloc_plugObj *chargee, int quota)
     {
         return;
     }
-
-    get_Amphextremum(chargee);
-    int shortage = quota;
+    outcomes_Collate_Allocation(OUTCOMES_CLR);
+    chargee->strategy_info.shortage_demand = quota;
+    bool res = NULL;
     for (int i = 0; i < quota; i++)
     {
-        handle_Demands_From_Charger(chargee, &shortage);
+        res = (bool)PREEMPT[Eulection_Tree].func(chargee) || res;
     }
-    for (int j = 0; j < shortage; j++)
+    quota = chargee->strategy_info.shortage_demand;
+    for (int j = 0; j < quota; j++)
     {
-        handle_Shortage_From_Peers(chargee, &shortage);
+        res = (bool)SHARING[Eulection_Tree].func(chargee) || res;
     }
-    if (0 < shortage)
+    if (res)
     {
-        handle_Lowest_Node_Holdsome(chargee, &shortage);
+        chargee->strategy_info.tag_realloc = REALLOCATEE;
     }
-
-    chargee->strategy_info.shortage_demand = shortage;
-
+    print_oneliner(NULL);
     return;
 }
 
-void allocating_Reception(void)
+void reallocate_Dealer(struct Alloc_plugObj *chargee)
 {
-    static uint32_t CCU_order_id = 0, CCU_deorder_id = 0;
-    if (!CCU_order_id)
+    outcomes_Collate_Allocation(OUTCOMES_CLR);
+    if (REALLOCATOR == chargee->strategy_info.tag_realloc)
     {
-        CCU_order_id = discover_Chargee_Demand_Routine();
-        if (0 < CCU_order_id)
-        {
-            struct Alloc_plugObj *chargee = PLUG_REF(CCU_order_id);
-            if (PRIOR_VAIN == chargee->strategy_info.priority || NODE_VAIN != chargee->next_charger)
-            {
-                return;
-            }
-            int quota = quota_Of_Demander(CCU_order_id); // 充电桩需要功率配额节点数
-                                                         // int credits = credits_Line_Supply(chargee, NODE_MAX); // 充电桩可供分配节点数
-                                                         // credits = credits > 0 ? credits : 0;
-            quota = (quota > NODE_MAX) ? NODE_MAX : (quota > 0 ? quota : 0);
-            allocating_Dealer(chargee, quota);
-        }
+        INHERIT[Eulection_Tree].func(chargee);
     }
-    if (!CCU_deorder_id)
+    else if (REALLOCATEE == chargee->strategy_info.tag_realloc)
     {
-        CCU_deorder_id = discover_Chargee_Depart_Routine();
-        if (0 < CCU_deorder_id)
+        ListObj *pos;
+        list_for_each(pos, &chargee->copula)
         {
-            struct Alloc_plugObj *chargee = PLUG_REF(CCU_deorder_id);
-            if (PRIOR_VAIN != chargee->strategy_info.priority)
+            if (NODEREF_FROM_CONTACTOR(ID_OF(pos))->chargingplug_Id == chargee->id && false == pos->ia_contacted)
             {
-                return;
-            }
-            if (NODE_VAIN == chargee->next_charger)
-            {
-                order_Plug(chargee);
-            }
-            else
-            {
-                recycling_Dearler(chargee);
-                meet_Remand_Shortage(chargee);
+                outcomes_Collate_Allocation(NODEREF_FROM_CONTACTOR(ID_OF(pos))->id, pos->id, 0);
+                pos->ia_contacted = true;
+                draw_contactor(ID_OF(pos), true);
+                outcomes_Collate_Allocation(OUTCOMES_INC);
             }
         }
     }
-
-    checkout_Charger_Supply(&CCU_order_id, &CCU_deorder_id);
-    return;
+    print_oneliner(NULL);
+    chargee->strategy_info.tag_realloc = NEITHERFLAG;
 }

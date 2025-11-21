@@ -1,70 +1,79 @@
+#pragma once
 #include "pdu_ex_datatype.h"
-#ifdef __PDU_CORE_EXPORT__
 
-typedef PowerDemand PlugInfoInst, *PlugInfoPtr;
-typedef PowerSupply NodeInfoInst, *NodeInfoPtr;
-typedef Contactor ContactorinfoInst, *ContactorinfoPtr;
-typedef NodeInfoPtr (*func_subscribe_pwrnode)(uint8_t);
-typedef PlugInfoPtr (*func_subscribe_pwrplug)(uint8_t);
-typedef ContactorinfoPtr (*func_subscribe_contactor)(uint8_t);
-typedef void (*func_set_pwrnode)(uint8_t, float, float);
-typedef void (*func_trace_alarm)(uint8_t, uint8_t, uint8_t);
-PlugInfoPtr __attribute__((weak)) proper_PwrDemandObj;
-NodeInfoPtr __attribute__((weak)) proper_PwrSupplyObj;
-ContactorinfoPtr __attribute__((weak)) proper_ContactorObj;
-func_subscribe_pwrnode __attribute__((weak)) proper_get_PwrnodeInfo_ExportPDU;
-func_subscribe_pwrplug __attribute__((weak)) proper_get_PwrplugInfo_ExportPDU;
-func_subscribe_contactor __attribute__((weak)) proper_get_ContactorInfo_ExportPDU;
-func_set_pwrnode __attribute__((weak)) proper_set_Pwrnode_Output;
-func_trace_alarm __attribute__((weak)) proper_trace_Alarm;
+typedef PowerDemand PlugInfoInst, *mirrorptr_PwrDemandObj;
+typedef PowerSupply NodeInfoInst, *mirrorptr_PwrSupplyObj;
+typedef Contactor ContactorinfoInst, *mirrorptr_ContactorObj;
+typedef mirrorptr_PwrSupplyObj (*mirrorptr_get_PwrnodeInfo_ExportPDU)(uint8_t);
+typedef mirrorptr_PwrDemandObj (*mirrorptr_get_PwrplugInfo_ExportPDU)(uint8_t);
+typedef mirrorptr_ContactorObj (*mirrorptr_get_ContactorInfo_ExportPDU)(uint8_t);
+typedef void (*mirrorptr_set_Pwrnode_Output)(uint8_t, float, float);
+typedef void (*mirrorptr_trace_Alarm)(uint8_t, uint8_t, uint8_t);
 
-void register_external_symbol(const char *name, void *symbol)
+#define EXPORT_LIST                              \
+    EXSYMBOL_XMACRO(set_Pwrnode_Output)          \
+    EXSYMBOL_XMACRO(get_PwrnodeInfo_ExportPDU)   \
+    EXSYMBOL_XMACRO(get_PwrplugInfo_ExportPDU)   \
+    EXSYMBOL_XMACRO(get_ContactorInfo_ExportPDU) \
+    EXSYMBOL_XMACRO(PwrDemandObj)                \
+    EXSYMBOL_XMACRO(PwrSupplyObj)                \
+    EXSYMBOL_XMACRO(ContactorObj)                \
+    EXSYMBOL_XMACRO(trace_Alarm)
+typedef union
 {
-#define HANDLE_SYMBOL(type, ext)                \
+#define UNION_MEMBER(x) comb_##x  
+#define EXSYMBOL_XMACRO(x) mirrorptr_##x UNION_MEMBER(x);
+    EXPORT_LIST
+#undef EXSYMBOL_XMACRO
+} SYMBOL_TYPE;
+
+
+#ifdef __PDU_CORE_EXPORT__
+#define REGISTERED_NAME(x) proper_##x
+#define EXSYMBOL_XMACRO(x) static mirrorptr_##x REGISTERED_NAME(x) = NULL;
+
+EXPORT_LIST
+#undef EXSYMBOL_XMACRO
+
+
+void register_external_symbol(const char *name, const SYMBOL_TYPE symbol)
+{
+    //cstat -DEFINE-hash-multiple
+#define EXSYMBOL_XMACRO(ext)                    \
     if (strncmp(name, #ext, sizeof(#ext)) == 0) \
     {                                           \
-        proper_##ext = (type)symbol;            \
+        REGISTERED_NAME(ext) = (symbol.UNION_MEMBER(ext));     \
         return;                                 \
     }
 
-    HANDLE_SYMBOL(PlugInfoPtr, PwrDemandObj);
-    HANDLE_SYMBOL(NodeInfoPtr, PwrSupplyObj);
-    HANDLE_SYMBOL(ContactorinfoPtr, ContactorObj);
-    HANDLE_SYMBOL(func_set_pwrnode, set_Pwrnode_Output);
-    HANDLE_SYMBOL(func_subscribe_contactor, get_ContactorInfo_ExportPDU);
-    HANDLE_SYMBOL(func_subscribe_pwrnode, get_PwrnodeInfo_ExportPDU);
-    HANDLE_SYMBOL(func_subscribe_pwrplug, get_PwrplugInfo_ExportPDU);
-    HANDLE_SYMBOL(func_trace_alarm, trace_Alarm);
-
+    //cstat +DEFINE-hash-multiple
+    EXPORT_LIST
     return;
+#undef EXSYMBOL_XMACRO
 }
 
 bool chk_registered_symbol(void)
 {
-#define CHECK_SYMBOL(nym)     \
-    if (NULL == proper_##nym) \
+#define EXSYMBOL_XMACRO(nym)  \
+    if (NULL == REGISTERED_NAME(nym)) \
     {                         \
         return false;         \
     }
 
-    CHECK_SYMBOL(set_Pwrnode_Output)
-    CHECK_SYMBOL(get_PwrnodeInfo_ExportPDU)
-    CHECK_SYMBOL(get_PwrplugInfo_ExportPDU)
-    CHECK_SYMBOL(get_ContactorInfo_ExportPDU)
-    CHECK_SYMBOL(PwrDemandObj)
-    CHECK_SYMBOL(PwrSupplyObj)
-    CHECK_SYMBOL(ContactorObj)
-    CHECK_SYMBOL(trace_Alarm)
+    EXPORT_LIST
 
     return true;
+#undef EXSYMBOL_XMACRO
 }
 #else
-void register_external_symbol(const char *name, void *symbol);
 
-#define EXPORT_COPYOUT_OF(variant)                            \
-    do                                                        \
-    {                                                         \
-        register_external_symbol(#variant, (void *)&variant); \
+void register_external_symbol(const char *name, const SYMBOL_TYPE symbol);
+
+#define EXPORT_COPYOUT_OF(symbol, variant)          \
+    do                                              \
+    {                                               \
+        symbol.comb_##variant = variant;            \
+        register_external_symbol(#variant, symbol); \
     } while (0)
 
 #endif
